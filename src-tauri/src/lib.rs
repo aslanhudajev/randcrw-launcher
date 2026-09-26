@@ -30,6 +30,8 @@ pub fn run() {
             commands::pick_iso,
             commands::start_extract,
             commands::start_verify,
+            commands::export_target,
+            commands::start_export,
             commands::cancel_job,
             commands::uninstall_game,
             commands::launch_game,

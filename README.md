@@ -37,7 +37,11 @@ The game repo's packaging step makes a release zip, e.g.
 2. **Install the game data.** Ratchet & Clank in the sidebar → **Install via ISO**, pick your
    `Ratchet & Clank (USA) (En,Fr,De,Es,It).iso`. The active version's extractor copies and checks
    about 4 GiB into `<data root>/games/rac1/data/` in a few seconds.
-3. **Play.** The launcher starts `randcrw --data-dir <data root>/games/rac1/data`; the game window
+3. **Export assets (optional).** The game screen's **⋯** menu → **Export assets…** picks a folder
+   and the kinds (textures, audio, models, levels, collision, text) and runs the extractor's
+   `export` command on the installed data: PNG, WAV, glTF and JSON for viewing and modding (the
+   whole disc is about 3.5 GB in about 10 s). **Open folder** shows the result.
+4. **Play.** The launcher starts `randcrw --data-dir <data root>/games/rac1/data`; the game window
    opens and the launcher shows *Running* until it exits (Esc opens the in-game menu, quit from
    there). Settings → Folders → *While playing* can minimise the launcher meanwhile. The game's
    output goes to `<data root>/logs/rac1-<unix time>.log`.
@@ -84,6 +88,7 @@ state, which is handy for screenshots:
 | `/?mock=error21` (or `error20`) | extraction failed with that code |
 | `/?mock=installed` | ready to play |
 | `/?mock=verifying`, `stale`, `no-version`, `playing` | other states |
+| `/?mock=exporting` (running), `/?mock=exported` (done); `&export=fail31` | asset export |
 | `/?iso=Ratchet%20%26%20Clank%20(Europe).iso` | what the fake file dialog returns |
 | `#/game/rac2`, `#/settings/folders`, `#/settings/versions/development`, `#/help` | screens |
 

@@ -1,13 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { errorText } from "../backend/api";
-import type { GameStatus, Stage } from "../backend/contract";
+import type { ExportKind, GameStatus, Stage } from "../backend/contract";
 import { Backdrop } from "../components/Backdrop";
-import { IconDisc, IconDots, IconFolder, IconPlay, IconRefresh, IconShield, IconTrash, IconWarn } from "../components/Icons";
+import { IconDisc, IconDots, IconDownload, IconFolder, IconPlay, IconRefresh, IconShield, IconTrash, IconWarn } from "../components/Icons";
 import type { Backend } from "../backend/api";
 import { Menu } from "../components/Menu";
 import { Modal } from "../components/Modal";
 import { ProgressBar } from "../components/ProgressBar";
-import { friendlyError, friendlyRuntimeError } from "../lib/errors";
+import { friendlyError, friendlyExportError, friendlyRuntimeError } from "../lib/errors";
 import { formatBytes, formatDuration, prettySerial } from "../lib/format";
 import type { GameDef } from "../lib/games";
 import { useLauncher, type JobResult, type JobView } from "../state";
@@ -15,7 +15,7 @@ import { useLauncher, type JobResult, type JobView } from "../state";
 export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => void }) {
   const { backend, snapshot, job, results, clearResult, statusTick, bumpStatus, run, toast, refresh } = useLauncher();
   const [status, setStatus] = useState<GameStatus | null>(null);
-  const [confirm, setConfirm] = useState<"uninstall" | "reextract" | null>(null);
+  const [confirm, setConfirm] = useState<"uninstall" | "reextract" | "export" | null>(null);
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
@@ -31,7 +31,9 @@ export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => voi
 
   const myJob = job && job.game === game.id ? job : null;
   const result = results[game.id];
-  const failed = result && result.status === "error" ? result : null;
+  // An export never changes the install, so its outcome has its own panel (and no re-extract offer).
+  const exported = result && result.kind === "export" && result.status !== "cancelled" ? result : null;
+  const failed = result && result.status === "error" && result.kind !== "export" ? result : null;
   const installed = !!status?.installed;
   const running = !!status?.running || snapshot?.game_running === game.id;
   const hasVersion = !!snapshot?.active && !snapshot.active.problem;
@@ -63,6 +65,16 @@ export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => voi
     await run(() => backend.startVerify(game.id));
   }
 
+  async function startExport(to: string, what: ExportKind[]) {
+    if (what.length === 0) {
+      toast("Choose at least one kind of asset to export.", "warn");
+      return;
+    }
+    setConfirm(null);
+    clearResult(game.id);
+    await run(() => backend.startExport(game.id, to, what));
+  }
+
   async function uninstall() {
     setConfirm(null);
     const ok = await run(async () => {
@@ -79,6 +91,16 @@ export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => voi
   let panel: ReactNode;
   if (myJob || starting) {
     panel = <ProgressPanel job={myJob} onCancel={() => void run(() => backend.cancelJob())} />;
+  } else if (exported) {
+    panel = (
+      <ExportResultPanel
+        result={exported}
+        onOpen={() => void run(() => backend.openFolder(`export:${game.id}`))}
+        onLogs={() => void run(() => backend.openFolder("logs"))}
+        onAgain={() => setConfirm("export")}
+        onDismiss={() => clearResult(game.id)}
+      />
+    );
   } else if (failed) {
     panel = (
       <ErrorPanel
@@ -106,6 +128,7 @@ export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => voi
           items={[
             { label: "Open data folder", icon: <IconFolder size={18} />, onSelect: () => void run(() => backend.openFolder(`game:${game.id}`)) },
             { label: "Verify files", icon: <IconShield size={18} />, onSelect: verify, disabled: running },
+            { label: "Export assets…", icon: <IconDownload size={18} />, onSelect: () => setConfirm("export"), disabled: running },
             { label: "Re-extract from ISO", icon: <IconRefresh size={18} />, onSelect: () => setConfirm("reextract"), disabled: running },
             { label: "Uninstall data", icon: <IconTrash size={18} />, onSelect: () => setConfirm("uninstall"), danger: true, disabled: running },
           ]}
@@ -130,7 +153,7 @@ export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => voi
   }
 
   const chip = myJob
-    ? { tone: "busy", text: myJob.kind === "extract" ? "Installing" : "Verifying" }
+    ? { tone: "busy", text: myJob.kind === "extract" ? "Installing" : myJob.kind === "export" ? "Exporting" : "Verifying" }
     : running
       ? { tone: "ok", text: "Running" }
       : installed
@@ -167,6 +190,9 @@ export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => voi
           </p>
         </Modal>
       )}
+      {confirm === "export" && status && (
+        <ExportModal game={game.id} initialDir={status.export_dir} onStart={startExport} onClose={() => setConfirm(null)} />
+      )}
       {confirm === "reextract" && (
         <Modal
           title="Re-extract from your disc image?"
@@ -193,10 +219,12 @@ const EXTRACT_STAGES: { id: Stage; label: string }[] = [
   { id: "prepare", label: "Prepare game data" },
 ];
 const VERIFY_STAGES: { id: Stage; label: string }[] = [{ id: "verify", label: "Check every file" }];
+// `export` reports one stage; its bytes are the installed data read so far.
+const EXPORT_STAGES: { id: Stage; label: string }[] = [{ id: "export", label: "Convert to PNG, WAV, glTF and JSON" }];
 
 function overall(job: JobView): number {
   const f = job.total > 0 ? job.done / job.total : 0;
-  if (job.kind === "verify") return f;
+  if (job.kind === "verify" || job.kind === "export") return f;
   switch (job.stage) {
     case "identify":
       return 0.03 * f;
@@ -218,7 +246,7 @@ function ProgressPanel({ job, onCancel }: { job: JobView | null; onCancel(): voi
     return () => clearInterval(t);
   }, []);
   const frac = job ? overall(job) : 0;
-  const stages = job?.kind === "verify" ? VERIFY_STAGES : EXTRACT_STAGES;
+  const stages = job?.kind === "verify" ? VERIFY_STAGES : job?.kind === "export" ? EXPORT_STAGES : EXTRACT_STAGES;
   const idx = job?.stage ? stages.findIndex((s) => s.id === job.stage) : -1;
   let eta: string | null = null;
   if (job?.stage === "copy" && job.copyStart) {
@@ -229,7 +257,7 @@ function ProgressPanel({ job, onCancel }: { job: JobView | null; onCancel(): voi
   return (
     <div className="panel progress-panel plate">
       <div className="pp-head">
-        <span className="pp-kind">{job?.kind === "verify" ? "Verifying files" : "Installing"}</span>
+        <span className="pp-kind">{job?.kind === "verify" ? "Verifying files" : job?.kind === "export" ? "Exporting assets" : "Installing"}</span>
         {job?.disc && (
           <span className="pp-disc">
             <IconDisc size={14} /> {prettySerial(job.disc.serial)} · {job.disc.region} v{job.disc.version}
@@ -252,7 +280,9 @@ function ProgressPanel({ job, onCancel }: { job: JobView | null; onCancel(): voi
         <span className="pp-bytes">
           {job && job.stage !== "identify" && job.total > 0
             ? `${formatBytes(job.done)} of ${formatBytes(job.total)}`
-            : "Reading the disc…"}
+            : job?.kind === "export"
+              ? "Reading the game data…"
+              : "Reading the disc…"}
           {eta && <em> · {eta}</em>}
         </span>
       </div>
@@ -355,6 +385,137 @@ function StalePanel({ status, onReextract }: { status: GameStatus; onReextract()
       <div className="ep-actions">
         <button className="btn btn-primary btn-sm" onClick={onReextract}>
           <IconDisc size={16} /> Re-extract via ISO
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const EXPORT_KINDS: { id: ExportKind; label: string; hint: string }[] = [
+  { id: "textures", label: "Textures", hint: "PNG, keeping the original palettes" },
+  { id: "audio", label: "Audio", hint: "WAV sound effects, music and speech (the biggest part)" },
+  { id: "models", label: "Models", hint: "glTF characters and objects, with their animations" },
+  { id: "levels", label: "Levels", hint: "glTF level geometry, plus placements and paths as JSON" },
+  { id: "collision", label: "Collision", hint: "glTF collision meshes" },
+  { id: "text", label: "Text", hint: "JSON, every language" },
+];
+
+function ExportModal({
+  game,
+  initialDir,
+  onStart,
+  onClose,
+}: {
+  game: string;
+  initialDir: string;
+  onStart(to: string, what: ExportKind[]): void;
+  onClose(): void;
+}) {
+  const { backend, run } = useLauncher();
+  const [dest, setDest] = useState(initialDir);
+  const [kinds, setKinds] = useState<Set<ExportKind>>(() => new Set(EXPORT_KINDS.map((k) => k.id)));
+  async function choose() {
+    const picked = await run(() => backend.pickFolder("Choose where to export the assets"));
+    if (!picked) return;
+    const to = await run(() => backend.exportTarget(game, picked));
+    if (to) setDest(to);
+  }
+  const toggle = (k: ExportKind, on: boolean) =>
+    setKinds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(k);
+      else next.delete(k);
+      return next;
+    });
+  return (
+    <Modal
+      title="Export assets"
+      confirmLabel="Export"
+      onConfirm={() => onStart(dest, EXPORT_KINDS.filter((k) => kinds.has(k.id)).map((k) => k.id))}
+      onClose={onClose}
+    >
+      <p>
+        Saves the game's assets from your installed data in standard formats, for viewing and modding. The game itself
+        never reads them.
+      </p>
+      <div className="path-field mono" title={dest}>
+        {dest}
+      </div>
+      <div className="row">
+        <button className="btn btn-ghost btn-sm" onClick={choose}>
+          <IconFolder size={16} /> Choose folder…
+        </button>
+        <span className="muted small">Everything takes about 3.5 GB.</span>
+      </div>
+      {EXPORT_KINDS.map((k) => (
+        <label className="toggle" key={k.id}>
+          <input type="checkbox" checked={kinds.has(k.id)} onChange={(e) => toggle(k.id, e.target.checked)} />
+          <span className="toggle-ui" aria-hidden="true" />
+          <span>
+            <b>{k.label}</b>
+            <span className="muted"> — {k.hint}</span>
+          </span>
+        </label>
+      ))}
+    </Modal>
+  );
+}
+
+function ExportResultPanel({
+  result,
+  onOpen,
+  onLogs,
+  onAgain,
+  onDismiss,
+}: {
+  result: JobResult;
+  onOpen(): void;
+  onLogs(): void;
+  onAgain(): void;
+  onDismiss(): void;
+}) {
+  if (result.status === "ok") {
+    const where = result.message.replace(/^Exported to /, "");
+    return (
+      <div className="panel plate">
+        <h3>Assets exported</h3>
+        <p>PNG textures, WAV audio, glTF models and levels, and JSON tables and text, each with notes on the original data.</p>
+        <div className="path-field mono" title={where}>
+          {where}
+        </div>
+        <div className="ep-actions">
+          <button className="btn btn-ghost btn-sm" onClick={onDismiss}>
+            Dismiss
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={onOpen}>
+            <IconFolder size={16} /> Open folder
+          </button>
+        </div>
+      </div>
+    );
+  }
+  const f = friendlyExportError(result.code, result.message);
+  return (
+    <div className="panel error-panel plate" role="alert">
+      <div className="ep-head">
+        <IconWarn size={22} />
+        <span className="ep-code">Export error {result.code}</span>
+      </div>
+      <h3>{f.title}</h3>
+      <p>{f.hint}</p>
+      <details className="ep-detail">
+        <summary>Details</summary>
+        <code>{result.message}</code>
+      </details>
+      <div className="ep-actions">
+        <button className="btn btn-ghost btn-sm" onClick={onDismiss}>
+          Dismiss
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={onLogs}>
+          <IconFolder size={16} /> Open logs
+        </button>
+        <button className="btn btn-primary btn-sm" onClick={onAgain}>
+          <IconDownload size={16} /> {f.pickAnother ? "Choose another folder" : "Try again"}
         </button>
       </div>
     </div>

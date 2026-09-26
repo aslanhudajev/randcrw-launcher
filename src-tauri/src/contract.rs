@@ -101,7 +101,8 @@ fn is_contained_relative(p: &str) -> bool {
             .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
 }
 
-/// Extraction stage reported by `progress` lines. `extract` ends with `prepare` (the engine cache).
+/// Extraction stage reported by `progress` lines. `extract` ends with `prepare` (the engine cache);
+/// `export` (the optional Tier 2 exports, game-side clarification 18) reports `export`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Stage {
@@ -109,6 +110,7 @@ pub enum Stage {
     Copy,
     Verify,
     Prepare,
+    Export,
 }
 
 /// One JSON line on the extractor's stdout with `--json`.
@@ -348,6 +350,15 @@ mod tests {
         assert_eq!(
             ev,
             Some(ExtractorEvent::Progress { stage: Stage::Verify, done: 1, total: 2, file: String::new() })
+        );
+    }
+
+    #[test]
+    fn export_progress_lines_parse() {
+        let ev = parse_event_line(r#"{"type":"progress","stage":"export","done":5,"total":9,"file":"levels/01/core_data.bin"}"#);
+        assert_eq!(
+            ev,
+            Some(ExtractorEvent::Progress { stage: Stage::Export, done: 5, total: 9, file: "levels/01/core_data.bin".into() })
         );
     }
 

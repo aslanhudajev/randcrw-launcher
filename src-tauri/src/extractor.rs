@@ -3,7 +3,10 @@
 //! stdout is read as JSON lines and forwarded to the page as `extractor://event`; the end of
 //! the job is `extractor://finished`. Extraction writes into `games/<game>/data.staging/` and is
 //! renamed over `data/` only after a clean exit, so a failed or cancelled run leaves the previous
-//! install untouched. Every line is also written to `logs/extract-<game>-<unix time>.log`.
+//! install untouched. Every line is also written to `logs/<kind>-<game>-<unix time>.log`.
+//!
+//! `export` (game-side clarification 18) writes the optional Tier 2 exports (PNG, WAV, glTF, JSON)
+//! from the installed data into a folder the user picked; it never touches `data/`.
 
 use crate::contract::{parse_event_line, ErrorCode, ExtractInfo, ExtractorEvent, Stage, EXTRACT_INFO_FILE};
 use serde::Serialize;
@@ -24,6 +27,28 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(80);
 pub enum JobKind {
     Extract,
     Verify,
+    Export,
+}
+
+impl JobKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            JobKind::Extract => "extract",
+            JobKind::Verify => "verify",
+            JobKind::Export => "export",
+        }
+    }
+}
+
+/// Export kinds the extractor accepts in `--what` (game-side clarification 18).
+pub const EXPORT_KINDS: [&str; 6] = ["textures", "audio", "models", "levels", "collision", "text"];
+
+/// What an export job writes and where.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportSpec {
+    pub to: PathBuf,
+    /// A non-empty subset of [`EXPORT_KINDS`].
+    pub what: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -66,6 +91,8 @@ pub struct JobSpec {
     pub data_dir: PathBuf,
     pub staging_dir: PathBuf,
     pub logs_dir: PathBuf,
+    /// Set for `JobKind::Export`.
+    pub export: Option<ExportSpec>,
 }
 
 impl JobSpec {
@@ -88,6 +115,7 @@ impl JobSpec {
             data_dir: layout.game_data_dir(game),
             staging_dir: layout.game_staging_dir(game),
             logs_dir: layout.logs_dir(),
+            export: None,
         }
     }
 
@@ -109,6 +137,19 @@ impl JobSpec {
                 a
             }
             JobKind::Verify => vec!["verify".into(), "--out".into(), s(&self.data_dir), "--json".into()],
+            JobKind::Export => {
+                let e = self.export.as_ref();
+                vec![
+                    "export".into(),
+                    "--out".into(),
+                    s(&self.data_dir),
+                    "--to".into(),
+                    e.map(|e| s(&e.to)).unwrap_or_default(),
+                    "--what".into(),
+                    e.map(|e| e.what.join(",")).unwrap_or_default(),
+                    "--json".into(),
+                ]
+            }
         }
     }
 }
@@ -159,6 +200,10 @@ impl JobManager {
         if slot.is_some() {
             return Err("Another extractor job is already running.".into());
         }
+        if spec.kind == JobKind::Export {
+            let e = spec.export.as_ref().ok_or("Export job without a destination.")?;
+            fs::create_dir_all(&e.to).map_err(|err| format!("Could not create {}: {err}", e.to.display()))?;
+        }
         if spec.kind == JobKind::Extract {
             remove_dir_if_exists(&spec.staging_dir).map_err(|e| format!("Could not clear old staging folder: {e}"))?;
             fs::create_dir_all(&spec.staging_dir).map_err(|e| format!("Could not create {}: {e}", spec.staging_dir.display()))?;
@@ -191,10 +236,7 @@ impl JobManager {
         std::thread::spawn(move || {
             let started = Instant::now();
             let unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-            let kind_name = match spec.kind {
-                JobKind::Extract => "extract",
-                JobKind::Verify => "verify",
-            };
+            let kind_name = spec.kind.name();
             let mut log = fs::File::create(spec.logs_dir.join(format!("{kind_name}-{}-{unix}.log", spec.game))).ok();
             if let Some(l) = log.as_mut() {
                 let _ = writeln!(l, "$ {} {}", spec.extractor.display(), spec.args().join(" "));
@@ -311,8 +353,13 @@ fn finish(
             });
         return (FinishStatus::Error, code, message);
     }
-    if spec.kind == JobKind::Verify {
-        return (FinishStatus::Ok, 0, "All files match.".into());
+    match spec.kind {
+        JobKind::Verify => return (FinishStatus::Ok, 0, "All files match.".into()),
+        JobKind::Export => {
+            let to = spec.export.as_ref().map(|e| e.to.display().to_string()).unwrap_or_default();
+            return (FinishStatus::Ok, 0, format!("Exported to {to}"));
+        }
+        JobKind::Extract => {}
     }
     match fs::read_to_string(spec.staging_dir.join(EXTRACT_INFO_FILE))
         .map_err(|_| format!("The extractor finished but wrote no {EXTRACT_INFO_FILE}"))
@@ -379,6 +426,7 @@ mod tests {
             data_dir: t.0.join("games/rac1/data"),
             staging_dir: t.0.join("games/rac1/data.staging"),
             logs_dir: t.0.join("logs"),
+            export: None,
         }
     }
 
@@ -406,6 +454,42 @@ mod tests {
         assert_eq!(v[0], "verify");
         assert!(v[2].ends_with("games/rac1/data"));
         assert_eq!(v[3], "--json");
+        let mut e = spec(&t, "x".into(), JobKind::Export);
+        e.export = Some(ExportSpec { to: t.0.join("out"), what: vec!["textures".into(), "audio".into()] });
+        let a = e.args();
+        assert_eq!((a[0].as_str(), a[1].as_str(), a[3].as_str(), a[5].as_str()), ("export", "--out", "--to", "--what"));
+        assert!(a[2].ends_with("games/rac1/data") && a[4].ends_with("out"));
+        assert_eq!((a[6].as_str(), a[7].as_str()), ("textures,audio", "--json"));
+    }
+
+    #[test]
+    fn export_writes_to_its_folder_and_leaves_the_install_alone() {
+        let t = TempDir::new("export");
+        // $5 is the --to dir.
+        let ex = script(
+            &t.0,
+            r#"echo '{"type":"progress","stage":"export","done":1,"total":2,"file":"levels/01/core_data.bin"}'
+echo '{"format":1}' > "$5/export-info.json"
+echo '{"type":"progress","stage":"export","done":2,"total":2,"file":"levels/01/core_data.bin"}'
+echo '{"type":"done","elapsed_ms":5}'
+"#,
+        );
+        let mut s = spec(&t, ex, JobKind::Export);
+        let to = t.0.join("My Exports");
+        s.export = Some(ExportSpec { to: to.clone(), what: vec!["textures".into()] });
+        fs::create_dir_all(&s.data_dir).unwrap();
+        fs::write(s.data_dir.join("keep.bin"), "keep").unwrap();
+        let data = s.data_dir.clone();
+        let (events, fin) = run(s);
+        assert_eq!(fin.status, FinishStatus::Ok, "{}", fin.message);
+        assert_eq!(fin.kind, JobKind::Export);
+        assert!(fin.message.contains("My Exports"));
+        assert!(matches!(events.last(), Some(ExtractorEvent::Done { .. })));
+        assert!(events.iter().any(|e| matches!(e, ExtractorEvent::Progress { stage: Stage::Export, done: 2, .. })));
+        assert!(to.join("export-info.json").is_file());
+        assert!(data.join("keep.bin").exists());
+        assert!(!t.0.join("games/rac1/data.staging").exists());
+        assert!(fs::read_dir(t.0.join("logs")).unwrap().flatten().any(|e| e.file_name().to_string_lossy().starts_with("export-rac1-")));
     }
 
     #[test]

@@ -145,10 +145,24 @@ The canonical copy of the contract and of these clarifications lives in the game
    incomplete and is never launched.
 8. `--iso` falls back to `RC_ISO`; `--threads N`, `--help` and `--version` exist.
 9. A full extraction of about 4 GiB takes 3–8 s, `verify` about 2 s.
+10. **Exports (optional).** `randcrw-extract export --out <game_data_dir> [--to <dir>] [--what
+    textures,audio,models,levels,collision,text|all] [--level NN] [--json]` writes PNG / WAV / glTF /
+    JSON from the installed data (never the disc). Progress uses the stage `export`; `done`/`total`
+    are bytes of installed data read. `export-info.json` in `--to` is written last; files are
+    `.partial` until complete. Codes: 10 (data unreadable / not installed), 30/31 (writing the
+    export failed / disk full), 40 (installed data damaged: verify), 99. Items a loader rejects are
+    `info` lines starting `skipped: `. The whole disc is about 60,000 files and 3.5 GB in about 10 s.
 
 ## Launcher-side details (not part of the game's obligations)
 
 These are how the launcher uses the contract. The game side does not need to do anything for them.
+
+- **Export assets…** (RAC1 game screen, secondary menu). A modal picks the destination (default
+  `games/<game>/data/exports/`; a picked folder that is neither empty nor an earlier export gets a
+  `randcrw-<game>-exports/` subfolder) and the kinds, then runs `export --out games/<game>/data
+  --to <dir> --what <kinds> --json` as a job like `verify` (same progress panel, cancel = kill,
+  log `logs/export-<game>-<unix>.log`). It never touches `data/`. The result panel offers "Open
+  folder"; failures use their own messages (no re-extract offer).
 
 - **Staging.** The launcher runs `extract` with `--out games/<game>/data.staging/`, and renames
   it over `games/<game>/data/` only after exit code 0 and a readable `extract-info.json`. A failed

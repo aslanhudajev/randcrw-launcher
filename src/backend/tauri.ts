@@ -29,6 +29,8 @@ export function createTauriBackend(): Backend {
     pickIso: () => invoke<string | null>("pick_iso"),
     startExtract: (game, iso) => invoke<number>("start_extract", { game, iso }),
     startVerify: (game) => invoke<number>("start_verify", { game }),
+    exportTarget: (game, picked) => invoke<string>("export_target", { game, picked }),
+    startExport: (game, to, what) => invoke<number>("start_export", { game, to, what }),
     cancelJob: () => invoke<boolean>("cancel_job"),
     uninstallGame: (game) => invoke<void>("uninstall_game", { game }),
     launchGame: (game) => invoke<void>("launch_game", { game }),

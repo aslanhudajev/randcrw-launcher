@@ -142,7 +142,8 @@ export function LauncherProvider({ backend, children }: { backend: Backend; chil
             ...r,
             [p.game]: { kind: p.kind, game: p.game, status: p.status, code: p.code, message: p.message, disc, at: Date.now() },
           }));
-          if (p.status === "cancelled") toast(p.kind === "extract" ? "Installation cancelled." : "Verification cancelled.", "info");
+          if (p.status === "cancelled")
+            toast(p.kind === "extract" ? "Installation cancelled." : p.kind === "export" ? "Export cancelled." : "Verification cancelled.", "info");
           if (p.status === "ok" && p.kind === "verify") toast("All game files match.", "ok");
           if (p.status === "ok" && p.kind === "extract") toast("Game data installed. Your disc image is no longer needed.", "ok");
           setStatusTick((t) => t + 1);

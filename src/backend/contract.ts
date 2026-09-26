@@ -14,8 +14,9 @@ export interface Manifest {
   data_format: number;
 }
 
-/** `extract` reports identify, copy (files are hashed while copied), then prepare (the engine cache); `verify` reports verify. */
-export type Stage = "identify" | "copy" | "verify" | "prepare";
+/** `extract` reports identify, copy (files are hashed while copied), then prepare (the engine cache); `verify` reports
+ * verify; `export` (the optional Tier 2 exports, game-side clarification 18) reports export. */
+export type Stage = "identify" | "copy" | "verify" | "prepare" | "export";
 
 export type DiscGame = "rac1" | "rac2" | "rac3" | "racdl" | "unknown";
 
@@ -97,7 +98,10 @@ export interface Settings {
   minimize_while_playing: boolean;
 }
 
-export type JobKind = "extract" | "verify";
+export type JobKind = "extract" | "verify" | "export";
+
+/** `randcrw-extract export --what` kinds (game-side clarification 18). */
+export type ExportKind = "textures" | "audio" | "models" | "levels" | "collision" | "text";
 
 export interface JobState {
   job: number;
@@ -135,6 +139,8 @@ export interface GameStatus {
   active_version: string | null;
   job: JobState | null;
   running: boolean;
+  /** Default destination of "Export assets…": this session's last export, else `<data>/exports`. */
+  export_dir: string;
 }
 
 export interface EventPayload {

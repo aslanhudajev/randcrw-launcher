@@ -2,11 +2,12 @@
 // screenshots. It follows the same contract as dev/mock/randcrw-extract.
 //
 // URL parameters:
-//   ?mock=not-installed | installed | extracting | verifying | error21 | error20 | sequel | no-version | stale | playing
+//   ?mock=not-installed | installed | extracting | verifying | exporting | exported | error21 | error20 | sequel | no-version | stale | playing
 //   ?iso=<file name>   what the fake file dialog returns (e.g. "Ratchet & Clank (Europe).iso" -> error 21)
 //   ?runtime=2|3|4|101 the fake game refuses to start with that exit code (101: a crash)
 //   ?zip=<file name>   what the fake .zip dialog returns ("bad" in the name: not a build)
 //   ?autoplay=1        press Play on load (for screenshots of the launch path)
+//   ?export=fail31     the next export fails with that code
 
 import type { Backend, Unlisten } from "./api";
 import type {
@@ -32,6 +33,8 @@ type Scenario =
   | "installed"
   | "extracting"
   | "verifying"
+  | "exporting"
+  | "exported"
   | "error21"
   | "error20"
   | "sequel"
@@ -131,12 +134,13 @@ export function createMockBackend(): Backend {
   // Launcher-installed development versions (from "Install from zip…"), by folder name.
   const installedZips = new Set<string>(noVersion ? [] : ["0.1.0"]);
   let dataRoot = DEFAULT_ROOT;
-  let installed: ExtractInfo | null = ["installed", "verifying", "stale", "playing"].includes(scenario)
+  let installed: ExtractInfo | null = ["installed", "verifying", "exporting", "exported", "stale", "playing"].includes(scenario)
     ? { disc: "SCUS_971.99", data_format: 1, extractor_version: "0.1.0-dev", ntsc_only: false, files: FILES.length, bytes: TOTAL }
     : null;
   let job: (JobState & { cancelled: boolean }) | null = null;
   let running: string | null = scenario === "playing" ? "rac1" : null;
   let nextJob = 1;
+  let lastExport: string | null = null;
 
   const evL = new Set<(p: EventPayload) => void>();
   const finL = new Set<(p: FinishedPayload) => void>();
@@ -163,7 +167,7 @@ export function createMockBackend(): Backend {
   const emit = (kind: JobKind, id: number, event: ExtractorEvent) =>
     evL.forEach((cb) => cb({ job: id, kind, game: "rac1", event }));
 
-  async function runJob(kind: JobKind, iso: string | null, opts: { from?: number; slow?: boolean } = {}) {
+  async function runJob(kind: JobKind, iso: string | null, opts: { from?: number; slow?: boolean; to?: string } = {}) {
     const id = nextJob++;
     job = { job: id, kind, game: "rac1", cancelled: false };
     const t0 = Date.now();
@@ -175,6 +179,16 @@ export function createMockBackend(): Backend {
     const fail = (code: number) => {
       emit(kind, id, { type: "error", code, message: MESSAGES[code] ?? `error ${code}` });
       finish("error", code, MESSAGES[code] ?? `error ${code}`);
+    };
+    const failExport = (code: number) => {
+      const m = `cannot write ${opts.to}/audio/levels/05/music/003.wav: permission denied`;
+      emit(kind, id, { type: "error", code, message: m });
+      finish("error", code, m);
+    };
+    const fail31 = () => {
+      const m = `not enough free space at ${opts.to} for the export: about 3620 MiB needed, 1210 MiB available`;
+      emit(kind, id, { type: "error", code: 31, message: m });
+      finish("error", 31, m);
     };
     // Kick off asynchronously so the caller gets the id first, like the real backend.
     void (async () => {
@@ -200,6 +214,19 @@ export function createMockBackend(): Backend {
           if ((err === 30 || err === 31 || err === 40 || err === 99) && s > steps * 0.55) return fail(err);
           await sleep(opts.slow ? 400 : 100);
         }
+      } else if (kind === "export") {
+        // The real export takes about 10 s for everything (3.5 GB written), well under a second per level.
+        const jobs = Array.from({ length: 19 }, (_, i) => `levels/${String(i).padStart(2, "0")}/core_data.bin`).concat(["global/sound_bank.bin", "global/all_text.bin"]);
+        const total = 1_214_000_000;
+        const steps = opts.slow ? 400 : 30;
+        for (let s = 0; s <= steps; s++) {
+          if (job?.cancelled) return finish("cancelled", 0, "Cancelled");
+          const done = Math.round((total * s) / steps);
+          emit(kind, id, { type: "progress", stage: "export", done, total, file: jobs[Math.min(jobs.length - 1, Math.floor((jobs.length * s) / steps))] });
+          const fail = Number((params.get("export") ?? "").replace("fail", ""));
+          if (fail && s > steps * 0.4) return fail === 31 ? fail31() : failExport(fail);
+          await sleep(opts.slow ? 400 : 100);
+        }
       } else {
         let done = 0;
         for (const [f, size] of FILES) {
@@ -214,7 +241,7 @@ export function createMockBackend(): Backend {
         installed = { disc: "SCUS_971.99", data_format: 1, extractor_version: "0.1.0-dev", ntsc_only: settings.ntsc_only, files: FILES.length, bytes: TOTAL };
       }
       emit(kind, id, { type: "done", elapsed_ms: Date.now() - t0 });
-      finish("ok", 0, kind === "extract" ? "Extraction complete." : "All files match.");
+      finish("ok", 0, kind === "extract" ? "Extraction complete." : kind === "export" ? `Exported to ${opts.to}` : "All files match.");
     })();
     return id;
   }
@@ -225,6 +252,10 @@ export function createMockBackend(): Backend {
     autoStarted = true;
     if (scenario === "extracting") void runJob("extract", `${HOME}/Games/Ratchet & Clank (USA).iso`, { from: 0.46, slow: true });
     if (scenario === "verifying") void runJob("verify", null, { slow: true });
+    if (scenario === "exporting" || scenario === "exported") {
+      lastExport = `${dataRoot}/games/rac1/data/exports`;
+      void runJob("export", null, { slow: scenario === "exporting", to: lastExport });
+    }
     if (scenario === "error21") void runJob("extract", `${HOME}/Games/Ratchet & Clank (Europe).iso`);
     if (scenario === "error20") void runJob("extract", `${HOME}/Games/notrac.iso`);
     if (params.get("autoplay") === "1") setTimeout(() => void self?.launchGame("rac1"), 200);
@@ -257,6 +288,7 @@ export function createMockBackend(): Backend {
     active_version: settings.active_version ? "0.1.0-dev" : null,
     job: job && job.game === game ? { job: job.job, kind: job.kind, game: job.game } : null,
     running: running === game,
+    export_dir: lastExport ?? `${dataRoot}/games/${game}/data/exports`,
   });
 
   const busy = () => {
@@ -282,6 +314,16 @@ export function createMockBackend(): Backend {
     startVerify: async () => {
       if (job) throw "Another extractor job is already running.";
       return runJob("verify", null, { slow: false });
+    },
+    exportTarget: async (_game, picked) =>
+      /\/(exports|randcrw-rac1-exports)$/.test(picked) || picked.endsWith("/Empty") ? picked : `${picked}/randcrw-rac1-exports`,
+    startExport: async (game, to, what) => {
+      if (game !== "rac1") throw "This game is not supported yet.";
+      if (!installed) throw "The game data is not installed.";
+      if (job) throw "Another extractor job is already running.";
+      if (what.length === 0) throw "Choose at least one kind of asset to export.";
+      lastExport = to;
+      return runJob("export", null, { to, slow: false });
     },
     cancelJob: async () => {
       if (!job) return false;
@@ -322,7 +364,7 @@ export function createMockBackend(): Backend {
     openUrl: async (url) => console.info("[mock] open url", url),
     pickFolder: async (title) => {
       await sleep(120);
-      return /build/i.test(title) ? `${HOME}/Repos/randcrw/dist/dev` : "/Volumes/Games";
+      return /build/i.test(title) ? `${HOME}/Repos/randcrw/dist/dev` : /export/i.test(title) ? `${HOME}/Desktop` : "/Volumes/Games";
     },
     moveDataRoot: async (target) => {
       busy();

@@ -129,3 +129,42 @@ export function friendlyError(code: number, disc?: DiscView | null, message?: st
   }
   return base;
 }
+
+/** Export failures (`randcrw-extract export`, game-side clarification 18). The installed data is never changed by an
+ * export, so the actions are only "try again" (another folder) and the log. */
+export function friendlyExportError(code: number, message?: string): FriendlyError {
+  switch (code) {
+    case 10:
+      return {
+        title: "The installed game data couldn't be read.",
+        hint: "Run Verify files. If it reports a problem, re-extract from your disc image.",
+        pickAnother: false,
+      };
+    case 30:
+      return {
+        title: "The export folder couldn't be written.",
+        hint: "Choose a folder you can write to, for example one in your Documents.",
+        pickAnother: true,
+      };
+    case 31:
+      return {
+        title: "There isn't enough disk space for the export.",
+        hint: "Everything takes about 3.5 GB (audio alone about 2.3 GB). Choose fewer kinds or a folder on a bigger drive.",
+        pickAnother: true,
+      };
+    case 40:
+      return {
+        title: "Some installed game data didn't load.",
+        hint: "Run Verify files; if it finds damaged files, re-extract from your disc image.",
+        pickAnother: false,
+      };
+    default:
+      return code === 99 && message?.startsWith("usage:")
+        ? {
+            title: "This randcrw build can't export assets.",
+            hint: "The active version's extractor doesn't know the export command. Update it under Version Management.",
+            pickAnother: false,
+          }
+        : TABLE[99];
+  }
+}

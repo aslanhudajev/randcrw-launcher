@@ -7,6 +7,7 @@ import type {
   DownloadProgress,
   EventPayload,
   ExitedPayload,
+  ExportKind,
   FinishedPayload,
   GameStatus,
   OfficialRelease,
@@ -16,7 +17,7 @@ import type {
 
 export type Unlisten = () => void;
 
-/** `root`, `logs`, `versions`, `game:<id>`, `source:<id>`, `path:<dev build folder>`. */
+/** `root`, `logs`, `versions`, `game:<id>`, `export:<id>` (last export), `source:<id>`, `path:<dev build folder>`. */
 export type FolderId = string;
 
 export interface Backend {
@@ -28,6 +29,11 @@ export interface Backend {
   pickIso(): Promise<string | null>;
   startExtract(game: string, iso: string): Promise<number>;
   startVerify(game: string): Promise<number>;
+  /** Where an export into the picked folder goes (the folder itself if empty or an earlier export,
+   * else `randcrw-<game>-exports` inside it). */
+  exportTarget(game: string, picked: string): Promise<string>;
+  /** Runs `randcrw-extract export` on the installed data into `to`. */
+  startExport(game: string, to: string, what: ExportKind[]): Promise<number>;
   cancelJob(): Promise<boolean>;
   uninstallGame(game: string): Promise<void>;
   launchGame(game: string): Promise<void>;

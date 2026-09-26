@@ -2,7 +2,7 @@
 //! Errors are user-facing strings.
 
 use crate::contract::ExtractInfo;
-use crate::extractor::{self, EventPayload, FinishedPayload, JobKind, JobSpec, JobState};
+use crate::extractor::{self, EventPayload, ExportSpec, FinishedPayload, JobKind, JobSpec, JobState};
 use crate::github;
 use crate::install;
 use crate::launch::{self, ExitedPayload, GameProcess};
@@ -10,6 +10,7 @@ use crate::paths::{self, Layout};
 use crate::settings::Settings;
 use crate::versions::{self, SourceId, VersionInfo, VersionRef};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -29,6 +30,8 @@ pub struct Launcher {
     pub settings: Mutex<Settings>,
     pub jobs: extractor::JobManager,
     pub game: GameProcess,
+    /// The folder of each game's most recent export this session ("Open folder").
+    pub exports: Mutex<HashMap<String, PathBuf>>,
 }
 
 impl Launcher {
@@ -45,6 +48,7 @@ impl Launcher {
             settings: Mutex::new(settings),
             jobs: Default::default(),
             game: Default::default(),
+            exports: Default::default(),
         }
     }
 
@@ -156,6 +160,8 @@ pub struct GameStatus {
     pub active_version: Option<String>,
     pub job: Option<JobState>,
     pub running: bool,
+    /// Where "Export assets…" writes by default: this session's last export, else `<data>/exports`.
+    pub export_dir: PathBuf,
 }
 
 #[tauri::command]
@@ -177,6 +183,7 @@ pub fn game_status(game: String, st: State<'_, Launcher>) -> CmdResult<GameStatu
         data_dir,
         job: st.jobs.current().filter(|j| j.game == game),
         running: st.game.running().as_deref() == Some(game.as_str()),
+        export_dir: last_export_dir(&st, &layout, &game),
         game,
     })
 }
@@ -257,6 +264,52 @@ pub fn start_verify(app: AppHandle, st: State<'_, Launcher>, game: String) -> Cm
     start_job(&app, &st, spec)
 }
 
+fn last_export_dir(st: &Launcher, layout: &Layout, game: &str) -> PathBuf {
+    st.exports.lock().unwrap().get(game).cloned().unwrap_or_else(|| layout.game_data_dir(game).join("exports"))
+}
+
+/// Where an export into the picked folder goes: the folder itself when it is empty or holds an
+/// earlier export (`export-info.json`), else a `randcrw-<game>-exports` folder inside it, so
+/// thousands of files never land loose in e.g. the Desktop.
+pub fn export_dir_for(picked: &Path, game: &str) -> PathBuf {
+    let empty = std::fs::read_dir(picked).map(|mut d| d.next().is_none()).unwrap_or(true);
+    if empty || picked.join("export-info.json").is_file() || picked.file_name().is_some_and(|n| n == "exports") {
+        picked.to_path_buf()
+    } else {
+        picked.join(format!("randcrw-{game}-exports"))
+    }
+}
+
+#[tauri::command]
+pub fn export_target(game: String, picked: String) -> CmdResult<String> {
+    check_installable(&game)?;
+    let p = PathBuf::from(picked);
+    if !p.is_absolute() {
+        return Err("Choose an absolute folder.".into());
+    }
+    Ok(export_dir_for(&p, &game).to_string_lossy().into_owned())
+}
+
+/// Runs `randcrw-extract export` on the installed data into `to` (from `export_target`).
+#[tauri::command]
+pub fn start_export(app: AppHandle, st: State<'_, Launcher>, game: String, to: String, what: Vec<String>) -> CmdResult<u64> {
+    let mut spec = job_spec(&st, &game, JobKind::Export, None)?;
+    if extractor::read_install(&spec.data_dir).is_none() {
+        return Err("The game data is not installed.".into());
+    }
+    let to = PathBuf::from(to);
+    if !to.is_absolute() {
+        return Err("Choose an absolute folder.".into());
+    }
+    if what.is_empty() || what.iter().any(|w| !extractor::EXPORT_KINDS.contains(&w.as_str())) {
+        return Err("Choose at least one kind of asset to export.".into());
+    }
+    spec.export = Some(ExportSpec { to: to.clone(), what });
+    let id = start_job(&app, &st, spec)?;
+    st.exports.lock().unwrap().insert(game, to);
+    Ok(id)
+}
+
 #[tauri::command]
 pub fn cancel_job(st: State<'_, Launcher>) -> bool {
     st.jobs.cancel()
@@ -331,7 +384,7 @@ fn open_path(app: &AppHandle, p: &Path) -> CmdResult<()> {
         .map_err(|e| e.to_string())
 }
 
-/// `which`: `root`, `logs`, `versions`, `game:<id>`, `source:<id>`.
+/// `which`: `root`, `logs`, `versions`, `game:<id>`, `export:<id>` (the last export), `source:<id>`.
 #[tauri::command]
 pub fn open_folder(app: AppHandle, st: State<'_, Launcher>, which: String) -> CmdResult<()> {
     let layout = st.layout();
@@ -342,6 +395,10 @@ pub fn open_folder(app: AppHandle, st: State<'_, Launcher>, which: String) -> Cm
         Some(("game", g)) => {
             check_game(g)?;
             layout.game_data_dir(g)
+        }
+        Some(("export", g)) => {
+            check_game(g)?;
+            last_export_dir(&st, &layout, g)
         }
         Some(("source", s)) => {
             let src: SourceId = serde_json::from_value(serde_json::Value::String(s.into())).map_err(|e| e.to_string())?;
@@ -632,4 +689,25 @@ pub fn default_root_or_fallback(app: &AppHandle) -> PathBuf {
     paths::default_data_root()
         .or_else(|| app.path().local_data_dir().ok().map(|d| d.join(paths::APP_DIR_NAME)))
         .unwrap_or_else(|| PathBuf::from(paths::APP_DIR_NAME))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::export_dir_for;
+    use crate::paths::tests::TempDir;
+
+    #[test]
+    fn exports_go_into_their_own_folder_unless_the_pick_is_empty_or_an_export() {
+        let t = TempDir::new("exportdir");
+        let empty = t.0.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert_eq!(export_dir_for(&empty, "rac1"), empty);
+        let busy = t.0.join("Desktop");
+        std::fs::create_dir_all(&busy).unwrap();
+        std::fs::write(busy.join("notes.txt"), "x").unwrap();
+        assert_eq!(export_dir_for(&busy, "rac1"), busy.join("randcrw-rac1-exports"));
+        std::fs::write(busy.join("export-info.json"), "{}").unwrap();
+        assert_eq!(export_dir_for(&busy, "rac1"), busy, "an earlier export is refreshed in place");
+        assert_eq!(export_dir_for(&t.0.join("missing"), "rac1"), t.0.join("missing"));
+    }
 }

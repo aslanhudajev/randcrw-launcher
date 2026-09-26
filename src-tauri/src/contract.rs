@@ -101,13 +101,14 @@ fn is_contained_relative(p: &str) -> bool {
             .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
 }
 
-/// Extraction stage reported by `progress` lines.
+/// Extraction stage reported by `progress` lines. `extract` ends with `prepare` (the engine cache).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Stage {
     Identify,
     Copy,
     Verify,
+    Prepare,
 }
 
 /// One JSON line on the extractor's stdout with `--json`.

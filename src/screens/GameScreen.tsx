@@ -184,11 +184,13 @@ export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => voi
   );
 }
 
-// `extract` reports identify then copy; files are hashed against the known-good table while
-// they are copied, so there is no separate verify stage. `verify` reports only verify.
+// `extract` reports identify, copy, then prepare (the engine cache, built from the copied files);
+// files are hashed against the known-good table while they are copied, so there is no separate
+// verify stage. `verify` reports only verify.
 const EXTRACT_STAGES: { id: Stage; label: string }[] = [
   { id: "identify", label: "Identify disc" },
   { id: "copy", label: "Copy & check files" },
+  { id: "prepare", label: "Prepare game data" },
 ];
 const VERIFY_STAGES: { id: Stage; label: string }[] = [{ id: "verify", label: "Check every file" }];
 
@@ -199,7 +201,9 @@ function overall(job: JobView): number {
     case "identify":
       return 0.03 * f;
     case "copy":
-      return 0.03 + 0.97 * f;
+      return 0.03 + 0.92 * f;
+    case "prepare":
+      return 0.95 + 0.05 * f;
     case "verify": // not sent by extract today; treat as the tail end
       return 1;
     default:

@@ -14,8 +14,8 @@ export interface Manifest {
   data_format: number;
 }
 
-/** `extract` reports identify then copy (files are hashed while copied); `verify` reports verify. */
-export type Stage = "identify" | "copy" | "verify";
+/** `extract` reports identify, copy (files are hashed while copied), then prepare (the engine cache); `verify` reports verify. */
+export type Stage = "identify" | "copy" | "verify" | "prepare";
 
 export type DiscGame = "rac1" | "rac2" | "rac3" | "racdl" | "unknown";
 

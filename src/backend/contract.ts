@@ -83,6 +83,9 @@ export interface VersionInfo {
   runtime: RuntimeVersion | null;
   problem: string | null;
   active: boolean;
+  /** Installed by the launcher under versions/<source>/ (removing deletes it); false for a
+   * registered development folder (removing only takes it off the list). */
+  managed: boolean;
 }
 
 export interface Settings {
@@ -91,6 +94,7 @@ export interface Settings {
   official: { enabled: boolean; owner: string; repo: string };
   dev_versions: { path: string }[];
   ntsc_only: boolean;
+  minimize_while_playing: boolean;
 }
 
 export type JobKind = "extract" | "verify";
@@ -126,6 +130,9 @@ export interface GameStatus {
   installed: boolean;
   info: ExtractInfo | null;
   stale: boolean;
+  /** The active version's data_format and version (null without a usable active version). */
+  expected_format: number | null;
+  active_version: string | null;
   job: JobState | null;
   running: boolean;
 }
@@ -151,7 +158,9 @@ export interface FinishedPayload {
 
 export interface ExitedPayload {
   game: string;
+  /** null: killed by a signal. */
   code: number | null;
+  /** logs/<game>-<unix>.log with the runtime's stdout and stderr. */
   log: string;
   /** The runtime's `error: ...` stderr line when it could not start. */
   message: string | null;

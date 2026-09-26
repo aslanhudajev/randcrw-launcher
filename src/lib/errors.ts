@@ -60,7 +60,8 @@ const TABLE: Record<number, FriendlyError> = {
   },
 };
 
-/** The runtime's own start-up failures (exit 2, 3, 4). */
+/** How the game ended when it did not exit 0: its own start-up failures (exit 2, 3, 4, see
+ * docs/contract.md) or a crash (anything else; -1 = killed by a signal). */
 export function friendlyRuntimeError(code: number): FriendlyError & { reextract: boolean } {
   switch (code) {
     case 3:
@@ -77,10 +78,24 @@ export function friendlyRuntimeError(code: number): FriendlyError & { reextract:
         pickAnother: false,
         reextract: true,
       };
-    default:
+    case 2:
       return {
         title: "randcrw couldn't start.",
         hint: "The launcher passed the game an option it didn't accept. Update the launcher and the game, or report it with the log.",
+        pickAnother: false,
+        reextract: false,
+      };
+    case -1:
+      return {
+        title: "The game was stopped.",
+        hint: "randcrw was ended by the system. If you didn't close it yourself, the log may show why.",
+        pickAnother: false,
+        reextract: false,
+      };
+    default:
+      return {
+        title: "randcrw crashed.",
+        hint: "The game stopped unexpectedly. The log has the details; please attach it when you report the problem.",
         pickAnother: false,
         reextract: false,
       };

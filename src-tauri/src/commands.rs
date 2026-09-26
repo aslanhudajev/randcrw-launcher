@@ -4,6 +4,7 @@
 use crate::contract::ExtractInfo;
 use crate::extractor::{self, EventPayload, FinishedPayload, JobKind, JobSpec, JobState};
 use crate::github;
+use crate::install;
 use crate::launch::{self, ExitedPayload, GameProcess};
 use crate::paths::{self, Layout};
 use crate::settings::Settings;
@@ -149,6 +150,10 @@ pub struct GameStatus {
     pub info: Option<ExtractInfo>,
     /// Installed data has a different `data_format` than the active version expects.
     pub stale: bool,
+    /// The active version's `data_format` (`None` without a usable active version).
+    pub expected_format: Option<u32>,
+    /// The active version's `version`, for messages.
+    pub active_version: Option<String>,
     pub job: Option<JobState>,
     pub running: bool,
 }
@@ -160,11 +165,14 @@ pub fn game_status(game: String, st: State<'_, Launcher>) -> CmdResult<GameStatu
     let settings = st.settings();
     let data_dir = layout.game_data_dir(&game);
     let info = extractor::read_install(&data_dir);
-    let expected = versions::resolve_active(&layout, &settings).ok().map(|v| v.manifest.data_format);
+    let active = versions::resolve_active(&layout, &settings).ok();
+    let expected = active.as_ref().map(|v| v.manifest.data_format);
     let stale = matches!((&info, expected), (Some(i), Some(f)) if i.data_format != f);
     Ok(GameStatus {
         installed: info.is_some(),
         stale,
+        expected_format: expected,
+        active_version: active.map(|v| v.manifest.version),
         info,
         data_dir,
         job: st.jobs.current().filter(|j| j.game == game),
@@ -207,21 +215,12 @@ fn job_spec(st: &Launcher, game: &str, kind: JobKind, iso: Option<PathBuf>) -> C
     }
     let layout = st.layout();
     let settings = st.settings();
+    // The extractor always comes from the active version.
     let v = versions::resolve_active(&layout, &settings)?;
     if v.manifest.game != game {
         return Err(format!("The active version is for {}, not {game}.", v.manifest.game));
     }
-    Ok(JobSpec {
-        kind,
-        game: game.to_string(),
-        extractor: v.extractor,
-        workdir: v.dir,
-        iso,
-        ntsc_only: settings.ntsc_only,
-        data_dir: layout.game_data_dir(game),
-        staging_dir: layout.game_staging_dir(game),
-        logs_dir: layout.logs_dir(),
-    })
+    Ok(JobSpec::new(kind, game, &v, &layout, iso, settings.ntsc_only))
 }
 
 fn start_job(app: &AppHandle, st: &Launcher, spec: JobSpec) -> CmdResult<u64> {
@@ -276,27 +275,50 @@ pub fn uninstall_game(st: State<'_, Launcher>, game: String) -> CmdResult<()> {
     Ok(())
 }
 
+/// Starts `<active version>/randcrw --data-dir <games/<game>/data>`. The page shows the running
+/// state from the snapshot and gets `game://exited` (code, `error:` line, log path) at the end.
 #[tauri::command]
 pub fn launch_game(app: AppHandle, st: State<'_, Launcher>, game: String) -> CmdResult<()> {
     check_installable(&game)?;
     if st.jobs.is_busy() {
         return Err("Wait for the extractor to finish first.".into());
     }
-    let layout = st.layout();
     let settings = st.settings();
-    let v = versions::resolve_active(&layout, &settings)?;
-    let data = layout.game_data_dir(&game);
-    let info = extractor::read_install(&data).ok_or("The game data is not installed.")?;
-    if info.data_format != v.manifest.data_format {
-        return Err(format!(
-            "The installed data is format {}, but randcrw {} needs format {}. Re-extract from your disc image.",
-            info.data_format, v.manifest.version, v.manifest.data_format
-        ));
-    }
+    let plan = launch::plan(&st.layout(), &settings, &game)?;
+    let minimize = settings.minimize_while_playing;
     let app2 = app.clone();
-    st.game.launch(&game, &v.runtime, &v.dir, &data, &layout.logs_dir(), move |p: ExitedPayload| {
+    st.game.launch(&plan, &[], move |p: ExitedPayload| {
+        if minimize {
+            if let Some(w) = app2.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }
         let _ = app2.emit(launch::EXITED, p);
-    })
+    })?;
+    if minimize {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.minimize();
+        }
+    }
+    Ok(())
+}
+
+/// Shows a game or extractor log in the file manager. Only files inside the logs folder.
+#[tauri::command]
+pub fn open_log(app: AppHandle, st: State<'_, Launcher>, path: String) -> CmdResult<()> {
+    let logs = std::fs::canonicalize(st.layout().logs_dir()).map_err(|e| e.to_string())?;
+    let p = std::fs::canonicalize(&path).map_err(|_| "That log file no longer exists.".to_string())?;
+    if !p.starts_with(&logs) {
+        return Err("Only files in the logs folder can be opened.".into());
+    }
+    app.opener().reveal_item_in_dir(&p).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_minimize_while_playing(app: AppHandle, st: State<'_, Launcher>, value: bool) -> CmdResult<AppSnapshot> {
+    st.update_settings(|s| s.minimize_while_playing = value)?;
+    Ok(snapshot(&app, &st))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -323,15 +345,13 @@ pub fn open_folder(app: AppHandle, st: State<'_, Launcher>, which: String) -> Cm
         }
         Some(("source", s)) => {
             let src: SourceId = serde_json::from_value(serde_json::Value::String(s.into())).map_err(|e| e.to_string())?;
-            match src.location() {
-                versions::SourceLocation::Managed(dir) => layout.source_dir(dir),
-                versions::SourceLocation::External => return Err("Development builds live in their own folders.".into()),
-            }
+            layout.source_dir(src.dir_name())
         }
         Some(("path", p)) => {
-            // Only folders of registered development builds.
+            // Only folders of known versions (registered or installed).
             let p = PathBuf::from(p);
-            if !st.settings().dev_versions.iter().any(|d| d.path == p) {
+            let known = versions::list(&layout, &st.settings()).into_iter().any(|v| v.path == p);
+            if !known {
                 return Err("Unknown folder.".into());
             }
             p
@@ -413,9 +433,90 @@ pub async fn add_dev_version(st: State<'_, Launcher>, path: String) -> CmdResult
     })?;
     let vref = VersionRef { source: SourceId::Development, id: path };
     let active = settings.is_active(&vref);
-    tauri::async_runtime::spawn_blocking(move || versions::validate(vref, p, active))
-        .await
-        .map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        clear_binaries_quarantine(&p);
+        versions::validate(vref, p, active)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// A folder the user unpacked with Finder carries the quarantine flag on every file; clear it on
+/// the two binaries the manifest names (see `install::clear_quarantine`).
+fn clear_binaries_quarantine(dir: &Path) {
+    if let Ok(m) = versions::read_manifest(dir) {
+        install::clear_quarantine(&dir.join(&m.runtime));
+        install::clear_quarantine(&dir.join(&m.extractor));
+    }
+}
+
+#[tauri::command]
+pub async fn pick_zip(app: AppHandle) -> CmdResult<Option<String>> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Choose a randcrw build (.zip)")
+        .add_filter("randcrw build (.zip)", &["zip", "ZIP"])
+        .blocking_pick_file();
+    match picked {
+        None => Ok(None),
+        Some(fp) => Ok(Some(fp.into_path().map_err(|e| e.to_string())?.to_string_lossy().into_owned())),
+    }
+}
+
+fn check_idle(st: &Launcher) -> CmdResult<()> {
+    if st.jobs.is_busy() || st.game.running().is_some() {
+        return Err("Wait for the running job or game to finish first.".into());
+    }
+    Ok(())
+}
+
+fn installed_info(st: &Launcher, i: install::Installed) -> VersionInfo {
+    let active = st.settings().is_active(&i.vref);
+    VersionInfo {
+        managed: true,
+        vref: i.vref,
+        path: i.dir,
+        manifest: Some(i.manifest),
+        runtime: Some(i.runtime),
+        problem: None,
+        active,
+    }
+}
+
+/// "Install from zip…": unpacks a build zip into `versions/development/<version>/`.
+#[tauri::command]
+pub async fn install_version_zip(st: State<'_, Launcher>, path: String) -> CmdResult<VersionInfo> {
+    check_idle(&st)?;
+    let zip = PathBuf::from(path);
+    if !zip.is_file() {
+        return Err(format!("{} does not exist.", zip.display()));
+    }
+    let dir = st.layout().source_dir(SourceId::Development.dir_name());
+    let installed = tauri::async_runtime::spawn_blocking(move || {
+        install::install_archive(&zip, SourceId::Development, &dir, None, &INSTALLABLE)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(installed_info(&st, installed))
+}
+
+/// Deletes a launcher-installed version folder. Registered development folders are only taken
+/// off the list (`remove_dev_version`).
+#[tauri::command]
+pub fn uninstall_version(app: AppHandle, st: State<'_, Launcher>, vref: VersionRef) -> CmdResult<AppSnapshot> {
+    check_idle(&st)?;
+    if !versions::is_managed(&vref) {
+        return Err("This build lives in its own folder; remove it from the list instead.".into());
+    }
+    let dir = versions::version_dir(&st.layout(), &st.settings(), &vref)?;
+    extractor::remove_dir_if_exists(&dir).map_err(|e| format!("Could not remove {}: {e}", dir.display()))?;
+    st.update_settings(|s| {
+        if s.is_active(&vref) {
+            s.active_version = None;
+        }
+    })?;
+    Ok(snapshot(&app, &st))
 }
 
 #[tauri::command]
@@ -443,7 +544,10 @@ pub async fn set_active_version(app: AppHandle, st: State<'_, Launcher>, vref: V
     let settings = st.settings();
     let dir = versions::version_dir(&st.layout(), &settings, &vref)?;
     let v = vref.clone();
-    let info = tauri::async_runtime::spawn_blocking(move || versions::validate(v, dir, false))
+    let info = tauri::async_runtime::spawn_blocking(move || {
+        clear_binaries_quarantine(&dir);
+        versions::validate(v, dir, false)
+    })
         .await
         .map_err(|e| e.to_string())?;
     if let Some(problem) = info.problem {
@@ -492,14 +596,15 @@ struct DownloadProgress {
     total: u64,
 }
 
-/// Downloads the platform asset of release `version` into `versions/official/<version>/`.
-/// Unpacking and install are left for the integration step (no release format exists yet).
+/// Downloads the platform `.zip` of release `version` and installs it as
+/// `versions/official/<version>/` through the same unpack + validate path as a local zip.
 #[tauri::command]
-pub async fn download_official(app: AppHandle, st: State<'_, Launcher>, version: String) -> CmdResult<String> {
+pub async fn download_official(app: AppHandle, st: State<'_, Launcher>, version: String) -> CmdResult<VersionInfo> {
     let s = st.settings().official;
     if !s.enabled {
         return Err("Official releases are turned off.".into());
     }
+    check_idle(&st)?;
     let releases = github::fetch_releases(&s.owner, &s.repo).await?;
     let rel = releases
         .into_iter()
@@ -509,12 +614,18 @@ pub async fn download_official(app: AppHandle, st: State<'_, Launcher>, version:
         .cloned()
         .ok_or("This release has no download for your system.")?;
     let vref = VersionRef { source: SourceId::Official, id: version.clone() };
-    let dest = versions::version_dir(&st.layout(), &st.settings(), &vref)?;
-    let file = github::download_asset(&asset, &dest, |done, total| {
+    versions::version_dir(&st.layout(), &st.settings(), &vref)?; // the tag must be a usable folder name
+    let official = st.layout().source_dir(SourceId::Official.dir_name());
+    let file = github::download_asset(&asset, &install::downloads_dir(&official), |done, total| {
         let _ = app.emit(DOWNLOAD_PROGRESS, DownloadProgress { version: version.clone(), done, total });
     })
     .await?;
-    Ok(file.to_string_lossy().into_owned())
+    let installed = tauri::async_runtime::spawn_blocking(move || {
+        install::install_download(&file, &official, &version, &INSTALLABLE)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(installed_info(&st, installed))
 }
 
 pub fn default_root_or_fallback(app: &AppHandle) -> PathBuf {

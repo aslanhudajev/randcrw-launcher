@@ -3,12 +3,14 @@
 //! A version is a folder holding `randcrw-manifest.json` (contract §Version). Versions come from
 //! *sources*:
 //!
-//! - `official`: GitHub releases, downloaded into `<root>/versions/official/<tag>/`.
-//! - `development`: local build folders the user adds; they stay where they are.
+//! - `official`: GitHub releases, downloaded and unpacked into `<root>/versions/official/<tag>/`.
+//! - `development`: local build folders the user adds (they stay where they are, the id is the
+//!   absolute path) and build zips installed with "Install from zip…" (unpacked into
+//!   `<root>/versions/development/<version>/`, the id is the folder name).
 //!
 //! Mods will be one more source (`versions/mods/<name>/`, installed like official builds from
-//! another feed). Adding it means a new `SourceId` variant, its arm in `SourceId::location`
-//! and a listing function; nothing else keys on the source list.
+//! another feed). Adding it means a new `SourceId` variant and its arm in `SourceId::location`;
+//! nothing else keys on the source list. Installing from an archive is `crate::install`.
 
 use crate::contract::{Manifest, RuntimeVersion, MANIFEST_FILE};
 use crate::paths::Layout;
@@ -28,11 +30,11 @@ pub enum SourceId {
 }
 
 /// Where a source keeps its versions.
-pub enum SourceLocation {
-    /// Installed under `<root>/versions/<dir>/<id>/`.
-    Managed(&'static str),
-    /// The id is an absolute path the user registered.
-    External,
+pub struct SourceLocation {
+    /// Versions installed by the launcher live in `<root>/versions/<dir>/<id>/`.
+    pub managed: &'static str,
+    /// The source also lists folders the user registered; their id is the absolute path.
+    pub external: bool,
 }
 
 impl SourceId {
@@ -40,14 +42,18 @@ impl SourceId {
 
     pub fn location(self) -> SourceLocation {
         match self {
-            SourceId::Official => SourceLocation::Managed("official"),
-            SourceId::Development => SourceLocation::External,
+            SourceId::Official => SourceLocation { managed: "official", external: false },
+            SourceId::Development => SourceLocation { managed: "development", external: true },
         }
+    }
+
+    pub fn dir_name(self) -> &'static str {
+        self.location().managed
     }
 }
 
-/// Identifies one version: `(source, id)`. For managed sources `id` is the folder name, for
-/// development builds it is the absolute folder path.
+/// Identifies one version: `(source, id)`. For installed (managed) versions `id` is the folder
+/// name under `versions/<source>/`; for registered development folders it is the absolute path.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VersionRef {
     pub source: SourceId,
@@ -65,6 +71,9 @@ pub struct VersionInfo {
     /// `None` when valid; otherwise why the version cannot be used.
     pub problem: Option<String>,
     pub active: bool,
+    /// Installed by the launcher under `versions/<source>/`: removing it deletes the files.
+    /// Registered development folders are only taken off the list.
+    pub managed: bool,
 }
 
 /// A usable version with absolute binary paths.
@@ -77,27 +86,31 @@ pub struct ResolvedVersion {
     pub extractor: PathBuf,
 }
 
+/// A folder name usable as a managed version id: no separators, not hidden, not `.`/`..`.
+/// (Hidden names are the installer's staging folders.)
+pub fn valid_managed_id(id: &str) -> bool {
+    !id.is_empty() && !id.contains(['/', '\\', ':']) && !id.starts_with('.') && id.len() <= 100
+}
+
+/// Whether the ref names a launcher-installed folder (as opposed to a registered path).
+pub fn is_managed(r: &VersionRef) -> bool {
+    !(r.source.location().external && Path::new(&r.id).is_absolute())
+}
+
 /// Folder of a version, or an error if the ref cannot name one.
 pub fn version_dir(layout: &Layout, settings: &Settings, r: &VersionRef) -> Result<PathBuf, String> {
-    match r.source.location() {
-        SourceLocation::Managed(dir) => {
-            let id_ok = !r.id.is_empty()
-                && !r.id.contains(['/', '\\'])
-                && r.id != "."
-                && r.id != "..";
-            if !id_ok {
-                return Err(format!("invalid version id \"{}\"", r.id));
-            }
-            Ok(layout.source_dir(dir).join(&r.id))
+    let loc = r.source.location();
+    if is_managed(r) {
+        if !valid_managed_id(&r.id) {
+            return Err(format!("invalid version id \"{}\"", r.id));
         }
-        SourceLocation::External => {
-            let p = PathBuf::from(&r.id);
-            if settings.dev_versions.iter().any(|d| d.path == p) {
-                Ok(p)
-            } else {
-                Err("this development build is no longer in the list".into())
-            }
-        }
+        return Ok(layout.source_dir(loc.managed).join(&r.id));
+    }
+    let p = PathBuf::from(&r.id);
+    if settings.dev_versions.iter().any(|d| d.path == p) {
+        Ok(p)
+    } else {
+        Err("this development build is no longer in the list".into())
     }
 }
 
@@ -188,10 +201,11 @@ pub fn check_runtime_matches(m: &Manifest, rv: &RuntimeVersion) -> Result<(), St
 pub fn validate(vref: VersionRef, dir: PathBuf, active: bool) -> VersionInfo {
     match resolve_dir(vref.clone(), dir.clone()) {
         Ok(v) => match query_runtime(&v) {
-            Ok(rv) => VersionInfo { vref, path: dir, manifest: Some(v.manifest), runtime: Some(rv), problem: None, active },
-            Err(e) => VersionInfo { vref, path: dir, manifest: Some(v.manifest), runtime: None, problem: Some(e), active },
+            Ok(rv) => VersionInfo { managed: is_managed(&vref), vref, path: dir, manifest: Some(v.manifest), runtime: Some(rv), problem: None, active },
+            Err(e) => VersionInfo { managed: is_managed(&vref), vref, path: dir, manifest: Some(v.manifest), runtime: None, problem: Some(e), active },
         },
         Err(e) => VersionInfo {
+            managed: is_managed(&vref),
             vref,
             path: dir.clone(),
             manifest: read_manifest(&dir).ok(),
@@ -202,39 +216,43 @@ pub fn validate(vref: VersionRef, dir: PathBuf, active: bool) -> VersionInfo {
     }
 }
 
+/// Launcher-installed versions of a source, newest folder name first.
+pub fn list_managed(layout: &Layout, source: SourceId) -> Vec<(VersionRef, PathBuf)> {
+    let base = layout.source_dir(source.dir_name());
+    let mut entries: Vec<_> = fs::read_dir(&base)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| valid_managed_id(&e.file_name().to_string_lossy()) && e.path().join(MANIFEST_FILE).is_file())
+        .map(|e| {
+            let id = e.file_name().to_string_lossy().into_owned();
+            (VersionRef { source, id }, e.path())
+        })
+        .collect();
+    entries.sort_by(|a, b| b.0.id.cmp(&a.0.id));
+    entries
+}
+
 /// Cheap listing (no processes spawned) of every source.
 pub fn list(layout: &Layout, settings: &Settings) -> Vec<VersionInfo> {
     let mut out = Vec::new();
     for source in SourceId::ALL {
-        let refs: Vec<(VersionRef, PathBuf)> = match source.location() {
-            SourceLocation::Managed(dir) => {
-                let base = layout.source_dir(dir);
-                let mut entries: Vec<_> = fs::read_dir(&base)
-                    .into_iter()
-                    .flatten()
-                    .flatten()
-                    .filter(|e| e.path().join(MANIFEST_FILE).is_file())
-                    .map(|e| {
-                        let id = e.file_name().to_string_lossy().into_owned();
-                        (VersionRef { source, id }, e.path())
-                    })
-                    .collect();
-                entries.sort_by(|a, b| b.0.id.cmp(&a.0.id));
-                entries
-            }
-            SourceLocation::External => settings
-                .dev_versions
-                .iter()
-                .map(|d| (VersionRef { source, id: d.path.to_string_lossy().into_owned() }, d.path.clone()))
-                .collect(),
-        };
+        let mut refs = list_managed(layout, source);
+        if source.location().external {
+            refs.extend(
+                settings
+                    .dev_versions
+                    .iter()
+                    .map(|d| (VersionRef { source, id: d.path.to_string_lossy().into_owned() }, d.path.clone())),
+            );
+        }
         for (vref, dir) in refs {
             let active = settings.is_active(&vref);
             let (manifest, problem) = match resolve_dir(vref.clone(), dir.clone()) {
                 Ok(v) => (Some(v.manifest), None),
                 Err(e) => (read_manifest(&dir).ok(), Some(e)),
             };
-            out.push(VersionInfo { vref, path: dir, manifest, runtime: None, problem, active });
+            out.push(VersionInfo { managed: is_managed(&vref), vref, path: dir, manifest, runtime: None, problem, active });
         }
     }
     out
@@ -266,12 +284,16 @@ mod tests {
     fn managed_ids_cannot_escape() {
         let l = Layout::new("/r");
         let s = Settings::default();
-        for bad in ["", "..", "a/b", "a\\b"] {
+        for bad in ["", "..", ".", ".install-1", "a/b", "a\\b", "/abs"] {
             let r = VersionRef { source: SourceId::Official, id: bad.into() };
             assert!(version_dir(&l, &s, &r).is_err(), "{bad}");
         }
         let ok = VersionRef { source: SourceId::Official, id: "v0.1.0".into() };
         assert_eq!(version_dir(&l, &s, &ok).unwrap(), PathBuf::from("/r/versions/official/v0.1.0"));
+        // Development: a plain id is an installed zip, an absolute path a registered folder.
+        let dz = VersionRef { source: SourceId::Development, id: "0.1.0".into() };
+        assert!(is_managed(&dz));
+        assert_eq!(version_dir(&l, &s, &dz).unwrap(), PathBuf::from("/r/versions/development/0.1.0"));
     }
 
     #[test]
@@ -290,6 +312,8 @@ mod tests {
         let layout = Layout::new(t.0.join("root"));
         write_version(&layout.source_dir("official").join("v0.1.0"), "");
         fs::create_dir_all(layout.source_dir("official").join("junk")).unwrap();
+        write_version(&layout.source_dir("official").join(".install-9"), "");
+        write_version(&layout.source_dir("development").join("0.2.0"), "");
         let dev = t.0.join("devbuild");
         write_version(&dev, "");
         let mut s = Settings::default();
@@ -298,12 +322,14 @@ mod tests {
         s.active_version = Some(dref.clone());
 
         let all = list(&layout, &s);
-        assert_eq!(all.len(), 3);
+        assert_eq!(all.len(), 4);
         assert_eq!(all[0].vref.source, SourceId::Official);
         assert_eq!(all[0].vref.id, "v0.1.0");
-        assert!(all[0].problem.is_none());
-        assert!(all[1].active && all[1].vref == dref && all[1].problem.is_none());
-        assert!(all[2].problem.as_deref().unwrap().contains("No randcrw-manifest.json"));
+        assert!(all[0].problem.is_none() && all[0].managed);
+        assert_eq!(all[1].vref, VersionRef { source: SourceId::Development, id: "0.2.0".into() });
+        assert!(all[1].managed && all[1].problem.is_none());
+        assert!(all[2].active && all[2].vref == dref && all[2].problem.is_none() && !all[2].managed);
+        assert!(all[3].problem.as_deref().unwrap().contains("No randcrw-manifest.json"));
         assert_eq!(resolve_active(&layout, &s).unwrap().runtime, dev.join("bin/randcrw"));
     }
 

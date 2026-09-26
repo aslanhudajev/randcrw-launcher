@@ -18,10 +18,7 @@ export function TitleBar() {
       <div className="tb-brand" data-tauri-drag-region>
         <BoltMark size={22} />
         <span className="tb-name" data-tauri-drag-region>
-          rand<b>crw</b>
-        </span>
-        <span className="tb-sub" data-tauri-drag-region>
-          Ratchet &amp; Clank: ReWrite
+          Ratchet &amp; Clank: <b>ReWrite</b>
         </span>
       </div>
       <div className="tb-spacer" data-tauri-drag-region />

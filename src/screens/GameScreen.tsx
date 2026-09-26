@@ -3,6 +3,7 @@ import { errorText } from "../backend/api";
 import type { GameStatus, Stage } from "../backend/contract";
 import { Backdrop } from "../components/Backdrop";
 import { IconDisc, IconDots, IconFolder, IconPlay, IconRefresh, IconShield, IconTrash, IconWarn } from "../components/Icons";
+import type { Backend } from "../backend/api";
 import { Menu } from "../components/Menu";
 import { Modal } from "../components/Modal";
 import { ProgressBar } from "../components/ProgressBar";
@@ -12,7 +13,7 @@ import type { GameDef } from "../lib/games";
 import { useLauncher, type JobResult, type JobView } from "../state";
 
 export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => void }) {
-  const { backend, snapshot, job, results, clearResult, statusTick, bumpStatus, run, toast } = useLauncher();
+  const { backend, snapshot, job, results, clearResult, statusTick, bumpStatus, run, toast, refresh } = useLauncher();
   const [status, setStatus] = useState<GameStatus | null>(null);
   const [confirm, setConfirm] = useState<"uninstall" | "reextract" | null>(null);
   const [starting, setStarting] = useState(false);
@@ -45,13 +46,15 @@ export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => voi
   }
 
   async function play() {
+    clearResult(game.id);
     const ok = await run(async () => {
       await backend.launchGame(game.id);
       return true;
     });
     if (ok) {
-      toast("Starting randcrw…", "info");
+      toast(`Starting randcrw${snapshot?.active?.version ? ` v${snapshot.active.version}` : ""}…`, "info");
       bumpStatus();
+      void refresh();
     }
   }
 
@@ -80,6 +83,7 @@ export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => voi
     panel = (
       <ErrorPanel
         result={failed}
+        backend={backend}
         onPickAnother={install}
         onReextract={() => setConfirm("reextract")}
         onDismiss={() => clearResult(game.id)}
@@ -89,7 +93,7 @@ export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => voi
   } else if (!hasVersion) {
     panel = <NoVersionPanel problem={snapshot?.active?.problem ?? null} onOpen={() => go("settings/versions/development")} />;
   } else if (installed && status?.stale) {
-    panel = <StalePanel onReextract={install} />;
+    panel = <StalePanel status={status} onReextract={install} />;
   } else if (installed) {
     panel = (
       <div className="gs-ready">
@@ -263,12 +267,14 @@ function ProgressPanel({ job, onCancel }: { job: JobView | null; onCancel(): voi
 
 function ErrorPanel({
   result,
+  backend,
   installed,
   onPickAnother,
   onReextract,
   onDismiss,
 }: {
   result: JobResult;
+  backend: Backend;
   installed: boolean;
   onPickAnother(): void;
   onReextract(): void;
@@ -282,7 +288,7 @@ function ErrorPanel({
     <div className="panel error-panel plate" role="alert">
       <div className="ep-head">
         <IconWarn size={22} />
-        <span className="ep-code">{launch ? `Game exit ${result.code}` : `Error ${result.code}`}</span>
+        <span className="ep-code">{launch ? (result.code < 0 ? "Game stopped" : `Game exit ${result.code}`) : `Error ${result.code}`}</span>
         {result.disc && (
           <span className="ep-disc">
             {prettySerial(result.disc.serial)} · {result.disc.region} v{result.disc.version}
@@ -299,6 +305,11 @@ function ErrorPanel({
         <button className="btn btn-ghost btn-sm" onClick={onDismiss}>
           {installed ? "Dismiss" : "Back"}
         </button>
+        {launch && result.log && (
+          <button className="btn btn-ghost btn-sm" onClick={() => void backend.openLog(result.log!).catch(() => backend.openFolder("logs"))}>
+            <IconFolder size={16} /> Open logs
+          </button>
+        )}
         {launch && !rt?.reextract ? null : verifyFail || (installed && !f.pickAnother) ? (
           <button className="btn btn-primary btn-sm" onClick={onReextract}>
             <IconRefresh size={16} /> Re-extract
@@ -327,11 +338,16 @@ function NoVersionPanel({ problem, onOpen }: { problem: string | null; onOpen():
   );
 }
 
-function StalePanel({ onReextract }: { onReextract(): void }) {
+function StalePanel({ status, onReextract }: { status: GameStatus; onReextract(): void }) {
+  const have = status.info?.data_format;
+  const want = status.expected_format;
   return (
     <div className="panel notice-panel plate">
       <h3>Game data needs an update</h3>
-      <p>This randcrw version uses a newer data format. Re-extract from your disc image to continue.</p>
+      <p>
+        The installed data is format {have}, but randcrw {status.active_version ? `v${status.active_version}` : ""} needs
+        format {want}. Re-extract from your disc image to continue, or switch back to a version that matches.
+      </p>
       <div className="ep-actions">
         <button className="btn btn-primary btn-sm" onClick={onReextract}>
           <IconDisc size={16} /> Re-extract via ISO

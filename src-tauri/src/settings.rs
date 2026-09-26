@@ -19,6 +19,8 @@ pub struct Settings {
     pub dev_versions: Vec<DevVersionEntry>,
     /// Pass `--ntsc-only` to the extractor (skips PAL-only movies and scenes).
     pub ntsc_only: bool,
+    /// Minimise the launcher window while the game runs (restored when it exits).
+    pub minimize_while_playing: bool,
 }
 
 impl Default for Settings {
@@ -29,6 +31,7 @@ impl Default for Settings {
             official: OfficialSettings::default(),
             dev_versions: Vec::new(),
             ntsc_only: false,
+            minimize_while_playing: false,
         }
     }
 }

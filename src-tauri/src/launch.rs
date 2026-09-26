@@ -1,7 +1,14 @@
 //! Starts the game: `<runtime> --data-dir <game_data_dir>` with `RC_DATA_DIR` set too
-//! (contract §Runtime). Output goes to `logs/<game>-<unix time>.log`.
+//! (contract §Runtime). stdout and stderr go to `logs/<game>-<unix time>.log`.
+//!
+//! [`plan`] decides what to start from the active version and the installed data (and refuses
+//! stale data before the runtime would exit 4); [`GameProcess`] runs it and reports the exit.
 
 use crate::contract::DATA_DIR_ENV;
+use crate::extractor;
+use crate::paths::Layout;
+use crate::settings::Settings;
+use crate::versions;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,9 +32,57 @@ pub const EXIT_BAD_ARGS: i32 = 2;
 pub const EXIT_NO_DATA: i32 = 3;
 pub const EXIT_DATA_MISMATCH: i32 = 4;
 
+/// Everything needed to start the game.
+#[derive(Debug, Clone)]
+pub struct LaunchPlan {
+    pub game: String,
+    pub version: String,
+    pub runtime: PathBuf,
+    /// The version folder (working directory of the runtime).
+    pub workdir: PathBuf,
+    pub data_dir: PathBuf,
+    pub logs_dir: PathBuf,
+}
+
+/// Resolves the active version and checks the installed data against it.
+pub fn plan(layout: &Layout, settings: &Settings, game: &str) -> Result<LaunchPlan, String> {
+    let v = versions::resolve_active(layout, settings)?;
+    if v.manifest.game != game {
+        return Err(format!("The active version is for {}, not {game}.", v.manifest.game));
+    }
+    let data_dir = layout.game_data_dir(game);
+    let info = extractor::read_install(&data_dir).ok_or("The game data is not installed.")?;
+    if info.data_format != v.manifest.data_format {
+        return Err(format!(
+            "The installed data is format {}, but randcrw {} needs format {}. Re-extract from your disc image.",
+            info.data_format, v.manifest.version, v.manifest.data_format
+        ));
+    }
+    Ok(LaunchPlan {
+        game: game.to_string(),
+        version: v.manifest.version,
+        runtime: v.runtime,
+        workdir: v.dir,
+        data_dir,
+        logs_dir: layout.logs_dir(),
+    })
+}
+
 /// Last `error: ...` line of a runtime log.
 pub fn error_line(log: &str) -> Option<String> {
     log.lines().rev().find(|l| l.starts_with("error:")).map(|l| l.trim().to_string())
+}
+
+/// For a crash (a Rust panic exits 101): the last `panicked at` line and the message after it.
+pub fn panic_lines(log: &str) -> Option<String> {
+    let lines: Vec<&str> = log.lines().collect();
+    let i = lines.iter().rposition(|l| l.contains("panicked at"))?;
+    let mut s = lines[i].trim().to_string();
+    if let Some(next) = lines.get(i + 1).filter(|l| !l.trim().is_empty() && !l.starts_with("note:")) {
+        s.push('\n');
+        s.push_str(next.trim());
+    }
+    Some(s)
 }
 
 #[derive(Default)]
@@ -46,35 +101,55 @@ impl GameProcess {
         self.running.lock().unwrap().clone()
     }
 
+    /// Starts the game. `extra_env` is for tests (e.g. `RC_SCREENSHOT_FRAME`); the app passes
+    /// none. Returns the log file path.
     pub fn launch(
         &self,
-        game: &str,
-        runtime: &Path,
-        workdir: &Path,
-        data_dir: &Path,
-        logs_dir: &Path,
+        p: &LaunchPlan,
+        extra_env: &[(&str, &str)],
         on_exit: impl FnOnce(ExitedPayload) + Send + 'static,
-    ) -> Result<(), String> {
+    ) -> Result<PathBuf, String> {
+        let game = p.game.as_str();
         let mut slot = self.running.lock().unwrap();
         if slot.is_some() {
             return Err("The game is already running.".into());
         }
-        fs::create_dir_all(logs_dir).map_err(|e| e.to_string())?;
+        fs::create_dir_all(&p.logs_dir).map_err(|e| e.to_string())?;
         let unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let log_path = logs_dir.join(format!("{game}-{unix}.log"));
-        let log = fs::File::create(&log_path).map_err(|e| e.to_string())?;
+        // Two launches in the same second (a quick exit 3/4, then Play again) get their own file.
+        let mut log_path = p.logs_dir.join(format!("{game}-{unix}.log"));
+        let mut n = 1;
+        while log_path.exists() {
+            n += 1;
+            log_path = p.logs_dir.join(format!("{game}-{unix}-{n}.log"));
+        }
+        let mut log = fs::File::create(&log_path).map_err(|e| e.to_string())?;
+        {
+            use std::io::Write;
+            let _ = writeln!(
+                log,
+                "$ {} --data-dir {}   (randcrw {}, from {})",
+                p.runtime.display(),
+                p.data_dir.display(),
+                p.version,
+                p.workdir.display()
+            );
+        }
         let log_err = log.try_clone().map_err(|e| e.to_string())?;
-        let child: Child = command(runtime, workdir, data_dir)
+        let mut cmd = command(&p.runtime, &p.workdir, &p.data_dir);
+        cmd.envs(extra_env.iter().copied());
+        let child: Child = cmd
             .stdin(Stdio::null())
             .stdout(Stdio::from(log))
             .stderr(Stdio::from(log_err))
             .spawn()
-            .map_err(|e| format!("Could not start the game ({}): {e}", runtime.display()))?;
+            .map_err(|e| format!("Could not start the game ({}): {e}", p.runtime.display()))?;
         *slot = Some(game.to_string());
         drop(slot);
 
         let running = self.running.clone();
         let game = game.to_string();
+        let returned = log_path.clone();
         std::thread::spawn(move || {
             let mut child = child;
             let code = loop {
@@ -88,11 +163,16 @@ impl GameProcess {
             let message = if code == Some(0) {
                 None
             } else {
-                fs::read_to_string(&log_path).ok().as_deref().and_then(error_line)
+                let text = fs::read_to_string(&log_path).unwrap_or_default();
+                error_line(&text).or_else(|| panic_lines(&text))
             };
+            if let Ok(mut f) = fs::OpenOptions::new().append(true).open(&log_path) {
+                use std::io::Write;
+                let _ = writeln!(f, "--- exit: {} ---", code.map_or("killed by a signal".to_string(), |c| c.to_string()));
+            }
             on_exit(ExitedPayload { game, code, log: log_path, message });
         });
-        Ok(())
+        Ok(returned)
     }
 }
 
@@ -120,6 +200,12 @@ mod tests {
             Some("error: data_format 2 does not match 1".to_string())
         );
         assert_eq!(error_line("all good\n"), None);
+        let panic = "fps: 60\nthread 'main' panicked at crates/rc-engine/src/main.rs:10:5:\nindex out of bounds\nnote: run with `RUST_BACKTRACE=1`\n";
+        assert_eq!(
+            panic_lines(panic).as_deref(),
+            Some("thread 'main' panicked at crates/rc-engine/src/main.rs:10:5:\nindex out of bounds")
+        );
+        assert_eq!(panic_lines("fine\n"), None);
     }
 
     #[cfg(unix)]
@@ -131,12 +217,57 @@ mod tests {
         fs::write(&rt, "#!/bin/sh\necho 'error: the data folder is incomplete' >&2\nexit 3\n").unwrap();
         fs::set_permissions(&rt, fs::Permissions::from_mode(0o755)).unwrap();
         let gp = GameProcess::default();
+        let plan = LaunchPlan {
+            game: "rac1".into(),
+            version: "0.1.0".into(),
+            runtime: rt,
+            workdir: t.0.clone(),
+            data_dir: t.0.join("data"),
+            logs_dir: t.0.join("logs"),
+        };
         let (tx, rx) = std::sync::mpsc::channel();
-        gp.launch("rac1", &rt, &t.0, &t.0.join("data"), &t.0.join("logs"), move |p| tx.send(p).unwrap())
-            .unwrap();
+        let log = gp.launch(&plan, &[], move |p| tx.send(p).unwrap()).unwrap();
         let p = rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert_eq!(p.code, Some(EXIT_NO_DATA));
         assert_eq!(p.message.as_deref(), Some("error: the data folder is incomplete"));
+        assert_eq!(p.log, log);
+        assert!(log.file_name().unwrap().to_string_lossy().starts_with("rac1-"));
+        let text = fs::read_to_string(&log).unwrap();
+        assert!(text.contains("--data-dir") && text.contains("--- exit: 3 ---"), "{text}");
         assert!(gp.running().is_none());
+
+        // A second launch in the same second gets its own log.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let log2 = gp.launch(&plan, &[("RC_EXTRA", "1")], move |p| tx.send(p).unwrap()).unwrap();
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_ne!(log, log2);
+    }
+
+    #[test]
+    fn plan_checks_version_and_data_format() {
+        let t = crate::paths::tests::TempDir::new("plan");
+        let layout = Layout::new(t.0.join("root"));
+        let mut s = Settings::default();
+        assert!(plan(&layout, &s, "rac1").unwrap_err().contains("No game version is active"));
+
+        let v = layout.source_dir("development").join("0.1.0");
+        fs::create_dir_all(&v).unwrap();
+        fs::write(v.join(crate::contract::MANIFEST_FILE), crate::install::tests::MANIFEST).unwrap();
+        fs::write(v.join("randcrw"), "").unwrap();
+        fs::write(v.join("randcrw-extract"), "").unwrap();
+        s.active_version = Some(versions::VersionRef { source: versions::SourceId::Development, id: "0.1.0".into() });
+        assert!(plan(&layout, &s, "rac1").unwrap_err().contains("not installed"));
+
+        let data = layout.game_data_dir("rac1");
+        fs::create_dir_all(&data).unwrap();
+        let info = |f: u32| format!(r#"{{"disc":"SCUS_971.99","data_format":{f},"extractor_version":"0.1.0","ntsc_only":false,"files":1,"bytes":1}}"#);
+        fs::write(data.join("extract-info.json"), info(2)).unwrap();
+        assert!(plan(&layout, &s, "rac1").unwrap_err().contains("format 2"));
+        fs::write(data.join("extract-info.json"), info(1)).unwrap();
+        let p = plan(&layout, &s, "rac1").unwrap();
+        assert_eq!(p.runtime, v.join("randcrw"));
+        assert_eq!(p.workdir, v);
+        assert_eq!(p.data_dir, data);
+        assert_eq!(p.logs_dir, layout.logs_dir());
     }
 }

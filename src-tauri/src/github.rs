@@ -74,8 +74,9 @@ pub fn summarize(body: &str) -> String {
     s
 }
 
-/// Picks the asset for this OS and CPU. Names are matched loosely (`macos`/`darwin`,
-/// `windows`/`win64`, `linux`; `aarch64`/`arm64`, `x86_64`/`x64`/`amd64`).
+/// Picks the `.zip` asset for this OS and CPU (release builds are zips, see
+/// `crate::install`). Names are matched loosely (`macos`/`darwin`, `windows`/`win64`, `linux`;
+/// `aarch64`/`arm64`, `x86_64`/`x64`/`amd64`).
 pub fn pick_asset<'a>(assets: &'a [GhAsset], os: &str, arch: &str) -> Option<&'a GhAsset> {
     let os_keys: &[&str] = match os {
         "macos" => &["macos", "darwin", "mac", "osx"],
@@ -86,7 +87,7 @@ pub fn pick_asset<'a>(assets: &'a [GhAsset], os: &str, arch: &str) -> Option<&'a
         "aarch64" => &["aarch64", "arm64"],
         _ => &["x86_64", "x64", "amd64"],
     };
-    let archive = |n: &str| n.ends_with(".zip") || n.ends_with(".tar.gz") || n.ends_with(".tgz");
+    let archive = |n: &str| n.ends_with(".zip");
     let for_os: Vec<&GhAsset> = assets
         .iter()
         .filter(|a| {
@@ -149,8 +150,8 @@ pub async fn fetch_releases(owner: &str, repo: &str) -> Result<Vec<GhRelease>, S
     parse_releases(&text)
 }
 
-/// Downloads an asset into `dest_dir`, reporting `(done, total)` as it goes. Returns the file.
-/// Unpacking into a version folder is the integration step's job (see README).
+/// Downloads an asset into `dest_dir`, reporting `(done, total)` as it goes. Returns the file,
+/// which the caller installs with `crate::install::install_archive` and then deletes.
 pub async fn download_asset(
     asset: &GhAsset,
     dest_dir: &Path,
@@ -204,7 +205,7 @@ mod tests {
     fn parses_github_shape() {
         let json = r###"[{"tag_name":"v0.2.0","name":"v0.2.0","published_at":"2026-10-01T12:00:00Z",
             "body":"## Changes\n- Faster loading\n- Fix Novalis","html_url":"https://github.com/o/r/releases/v0.2.0",
-            "draft":false,"prerelease":false,"assets":[{"name":"randcrw-v0.2.0-macos-arm64.tar.gz","size":10,
+            "draft":false,"prerelease":false,"assets":[{"name":"randcrw-0.2.0-macos-arm64.zip","size":10,
             "browser_download_url":"https://x/a","id":1}]},
             {"tag_name":"v0.3.0-draft","draft":true,"assets":[]}]"###;
         let rel = parse_releases(json).unwrap();
@@ -220,14 +221,16 @@ mod tests {
     #[test]
     fn picks_platform_asset() {
         let assets = vec![
-            asset("randcrw-v1-linux-x86_64.tar.gz"),
-            asset("randcrw-v1-macos-arm64.tar.gz"),
-            asset("randcrw-v1-macos-x86_64.tar.gz"),
+            asset("randcrw-0.1.0-linux-x86_64.zip"),
+            asset("randcrw-0.1.0-macos-arm64.tar.gz"),
+            asset("randcrw-0.1.0-macos-arm64.zip"),
+            asset("randcrw-0.1.0-macos-x86_64.zip"),
             asset("randcrw-v1-windows-x64.zip"),
             asset("checksums.txt"),
         ];
-        assert_eq!(pick_asset(&assets, "macos", "aarch64").unwrap().name, "randcrw-v1-macos-arm64.tar.gz");
-        assert_eq!(pick_asset(&assets, "macos", "x86_64").unwrap().name, "randcrw-v1-macos-x86_64.tar.gz");
+        // The game repo's release name (tools/package/package.sh).
+        assert_eq!(pick_asset(&assets, "macos", "aarch64").unwrap().name, "randcrw-0.1.0-macos-arm64.zip");
+        assert_eq!(pick_asset(&assets, "macos", "x86_64").unwrap().name, "randcrw-0.1.0-macos-x86_64.zip");
         assert_eq!(pick_asset(&assets, "windows", "x86_64").unwrap().name, "randcrw-v1-windows-x64.zip");
         assert_eq!(pick_asset(&assets, "linux", "aarch64"), None);
         let universal = vec![asset("randcrw-macos-universal.zip")];

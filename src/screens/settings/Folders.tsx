@@ -56,7 +56,7 @@ export function Folders() {
         <ul className="tree mono">
           <li>
             <b>versions{sep}</b>
-            <span>game builds by source (official, later mods)</span>
+            <span>game builds by source (official, development, later mods)</span>
           </li>
           <li>
             <b>games{sep}rac1{sep}data{sep}</b>
@@ -86,6 +86,22 @@ export function Folders() {
           <span>
             <b>Skip PAL-only data</b>
             <span className="muted"> — smaller install. Anything skipped only comes back by re-extracting from the disc.</span>
+          </span>
+        </label>
+      </div>
+
+      <div className="card plate">
+        <h3>While playing</h3>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={snapshot.settings.minimize_while_playing}
+            onChange={(e) => void run(() => backend.setMinimizeWhilePlaying(e.target.checked)).then((s) => s && setSnapshot(s))}
+          />
+          <span className="toggle-ui" aria-hidden="true" />
+          <span>
+            <b>Minimise the launcher</b>
+            <span className="muted"> — it comes back when the game exits. Off: the launcher stays open.</span>
           </span>
         </label>
       </div>

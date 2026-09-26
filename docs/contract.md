@@ -80,17 +80,25 @@ On success the extractor writes `<game_data_dir>/extract-info.json`:
   `--data-dir <dir>` / `--data-dir=<dir>` wins over `RC_DATA_DIR`. The folder must hold `toc.bin`
   and an `extract-info.json` with the build's `data_format`.
 - When the runtime cannot start, it prints one `error: ...` line on stderr and exits before any
-  window opens:
+  window opens (game repo clarification 14):
 
-  | Exit | Meaning | Launcher |
+  | Exit | Raised when | Launcher |
   |---|---|---|
+  | 0 | normal quit (also after `--version-json`) | |
   | 2 | `--data-dir` given without a value | "randcrw couldn't start." (a launcher/game mismatch) |
-  | 3 | data folder missing, not a data folder, or extraction incomplete | "The game data is missing or incomplete." + Re-extract |
-  | 4 | `data_format` mismatch, or the info file can't be read | "The game data doesn't match this randcrw version." + Re-extract |
+  | 3 | the data folder is missing, is not a data folder (no `toc.bin`), or the extraction is incomplete (no `extract-info.json`) | "The game data is missing or incomplete." + Re-extract |
+  | 4 | `extract-info.json` has another `data_format`, or cannot be read | "The game data doesn't match this randcrw version." + Re-extract |
 
-  The launcher shows the `error:` line under Details. Any other non-zero exit is reported as a
-  crash with a pointer to the log.
-- The packaged runtime binary is named `randcrw`; its path always comes from the manifest.
+  The launcher shows the `error:` line under Details. Any other non-zero exit (a panic is 101; a
+  signal has no code) is a crash; the launcher says so and points at the log. Unknown arguments
+  are ignored with a warning, so a newer launcher's extra flags do not stop an older runtime.
+- **Packaged version folder** (game repo clarification 15, `tools/package/package.sh`):
+  `randcrw` (`randcrw.exe` on Windows), `randcrw-extract`, `assets/shaders/*.wgsl`,
+  `randcrw-manifest.json`, `README.txt`. The manifest names the binaries by these relative paths.
+  The runtime finds `assets/` next to its real (symlink-resolved) executable, so the folder can be
+  copied or moved as a whole, but `randcrw` must not be copied out of it alone. Releases are
+  published as `randcrw-<version>-<os>-<arch>.zip` holding that folder as its single top-level
+  entry (e.g. `randcrw-0.1.0-macos-arm64/`).
 
 ## Folders
 
@@ -105,7 +113,8 @@ Per-OS app data root named `randcrw`:
 Under it:
 
 ```
-versions/            game builds, by source (versions/official/<tag>/, later versions/mods/...)
+versions/            game builds by source: versions/official/<tag>/, versions/development/<version>/
+                     (installed zips), later versions/mods/...
 games/rac1/data/     the extracted game data (the runtime's --data-dir)
 logs/
 settings/            settings/launcher.json holds the launcher settings
@@ -158,5 +167,25 @@ These are how the launcher uses the contract. The game side does not need to do 
 - **Validation.** A version is usable when its manifest parses, both binaries exist, and
   `<runtime> --version-json` answers within 10 s with `name` = `randcrw` and the same `game` and
   `data_format` as the manifest.
+- **Installing a version** (`src-tauri/src/install.rs`). "Install from zip…" (Development) and
+  Official downloads take the same path: unpack into a hidden `versions/<source>/.install-*`
+  folder (skipping `__MACOSX/` and AppleDouble `._*` entries, keeping the zip's Unix permission
+  bits, allowing only relative symlinks that stay inside), use the folder that holds the manifest
+  (the zip root or its single top-level folder), validate as above, then rename it to
+  `versions/<source>/<id>/`. The id is the manifest's `version` for a local zip and the release tag
+  for an Official download. Nothing is left behind on failure. Installed versions can be deleted
+  from Version Management; registered development folders are only taken off the list.
+- **macOS quarantine.** The launcher removes `com.apple.quarantine` from installed versions and
+  from the two binaries of a registered development folder. A zip downloaded with a browser is
+  quarantined, Finder's Archive Utility copies the flag onto every unpacked file, and Gatekeeper
+  then refuses to run the ad-hoc-signed `randcrw` ("developer cannot be verified").
+- **Active version.** The extractor for Install/Verify and the runtime for Play both come from the
+  active version. Switching to a version with another `data_format` than the installed data warns
+  right away, and Play is replaced by a Re-extract prompt.
+- **Play.** `<version>/randcrw --data-dir <root>/games/<game>/data` (plus `RC_DATA_DIR`), working
+  directory the version folder. Optionally the launcher minimises itself while the game runs
+  (setting `minimize_while_playing`, default off) and comes back when it exits.
 - **Logs.** `logs/extract-<game>-<unix>.log`, `logs/verify-<game>-<unix>.log` and
-  `logs/<game>-<unix>.log` (game stdout and stderr).
+  `logs/<game>-<unix>.log` (game stdout and stderr, with the command line first and the exit code
+  last; a second start in the same second gets `-2`, `-3`, …). A failed game run offers "Open logs",
+  which reveals that file.

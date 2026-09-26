@@ -1,9 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
-import { errorText } from "../../backend/api";
+import { errorText, type Backend } from "../../backend/api";
 import type { OfficialRelease, VersionInfo, VersionRef } from "../../backend/contract";
 import { IconCheck, IconDownload, IconFolder, IconInfo, IconPlus, IconRefresh, IconTrash, IconWarn } from "../../components/Icons";
+import { Modal } from "../../components/Modal";
 import { SOURCES } from "../../lib/sources";
-import { useLauncher } from "../../state";
+import { useLauncher, type Toast } from "../../state";
+
+/** After switching versions: warn when the installed game data has another data_format. */
+async function warnIfDataMismatch(backend: Backend, toast: (text: string, tone?: Toast["tone"]) => void) {
+  try {
+    const st = await backend.gameStatus("rac1");
+    if (st.installed && st.stale && st.info) {
+      toast(
+        `The installed game data is format ${st.info.data_format}, but randcrw ${st.active_version ?? ""} needs format ${st.expected_format}. Re-extract before playing.`,
+        "warn",
+      );
+    }
+  } catch {
+    // The game screen shows the same state.
+  }
+}
 
 export function Versions({ sub, go }: { sub?: string; go: (p: string) => void }) {
   const current = SOURCES.find((s) => s.id === sub && !s.disabledNote) ?? SOURCES[0];
@@ -41,7 +57,8 @@ function ActiveBadge() {
 // ---------------------------------------------------------------------------------------------
 
 function Official() {
-  const { backend, snapshot, setSnapshot, run, toast } = useLauncher();
+  const { backend, snapshot, setSnapshot, run, toast, bumpStatus } = useLauncher();
+  const [busy, setBusy] = useState<string | null>(null);
   const cfg = snapshot?.settings.official;
   const [rows, setRows] = useState<OfficialRelease[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -71,9 +88,28 @@ function Official() {
   }
 
   async function download(version: string) {
-    const file = await run(() => backend.downloadOfficial(version));
-    if (file) toast(`Downloaded ${version}. Unpacking arrives with the first published release.`, "info");
+    setBusy(version);
+    const info = await run(() => backend.downloadOfficial(version));
+    setBusy(null);
+    if (info) {
+      toast(`Installed randcrw ${info.manifest?.version ?? version}.`, "ok");
+      await load();
+    }
   }
+
+  async function activate(version: string) {
+    setBusy(version);
+    const s = await run(() => backend.setActiveVersion({ source: "official", id: version }));
+    setBusy(null);
+    if (s) {
+      setSnapshot(s);
+      bumpStatus();
+      toast("Active version changed.", "ok");
+      await warnIfDataMismatch(backend, toast);
+    }
+  }
+
+  const activeOfficial = snapshot?.settings.active_version?.source === "official" ? snapshot.settings.active_version.id : null;
 
   return (
     <>
@@ -152,10 +188,16 @@ function Official() {
                   <td>{r.changes}</td>
                   <td className="vt-actions">
                     {r.installed ? (
-                      <span className="badge is-ok">Installed</span>
+                      activeOfficial === r.version ? (
+                        <ActiveBadge />
+                      ) : (
+                        <button className="btn btn-ghost btn-sm" disabled={busy !== null} onClick={() => void activate(r.version)}>
+                          {busy === r.version ? "Checking…" : "Set active"}
+                        </button>
+                      )
                     ) : (
-                      <button className="btn btn-primary btn-sm btn-icon" disabled={!r.asset} title={r.asset ? `Download ${r.asset.name}` : "No download for this system"} onClick={() => void download(r.version)}>
-                        <IconDownload size={16} />
+                      <button className="btn btn-primary btn-sm btn-icon" disabled={!r.asset || busy !== null} title={r.asset ? `Download and install ${r.asset.name}` : "No download for this system"} onClick={() => void download(r.version)}>
+                        {busy === r.version ? <IconRefresh size={16} /> : <IconDownload size={16} />}
                       </button>
                     )}
                   </td>
@@ -197,6 +239,8 @@ function Development() {
   const [list, setList] = useState<VersionInfo[]>([]);
   const [checked, setChecked] = useState<Record<string, VersionInfo>>({});
   const [pending, setPending] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<VersionInfo | null>(null);
 
   const validate = useCallback(
     async (vref: VersionRef) => {
@@ -238,6 +282,18 @@ function Development() {
     else toast(`Added randcrw ${info.manifest?.version}.`, "ok");
   }
 
+  async function installZip() {
+    const path = await run(() => backend.pickZip());
+    if (!path) return;
+    setInstalling(true);
+    const info = await run(() => backend.installVersionZip(path));
+    setInstalling(false);
+    if (!info) return;
+    setChecked((c) => ({ ...c, [info.ref.id]: info }));
+    await reload();
+    toast(`Installed randcrw ${info.manifest?.version}.${info.active ? "" : " Set it active to use it."}`, "ok");
+  }
+
   async function activate(vref: VersionRef) {
     setPending(vref.id);
     const s = await run(() => backend.setActiveVersion(vref));
@@ -246,15 +302,18 @@ function Development() {
       setSnapshot(s);
       bumpStatus();
       toast("Active version changed.", "ok");
+      await warnIfDataMismatch(backend, toast);
     }
   }
 
-  async function remove(path: string) {
-    const s = await run(() => backend.removeDevVersion(path));
+  async function remove(v: VersionInfo) {
+    setConfirmDelete(null);
+    const s = await run(() => (v.managed ? backend.uninstallVersion(v.ref) : backend.removeDevVersion(v.path)));
     if (s) {
       setSnapshot(s);
       bumpStatus();
       await reload();
+      if (v.managed) toast(`Deleted randcrw ${v.manifest?.version ?? v.ref.id}.`, "info");
     }
   }
 
@@ -267,13 +326,19 @@ function Development() {
           <div>
             <h3>Local builds</h3>
             <p className="muted">
-              Add a build folder that contains <code>randcrw-manifest.json</code>. The launcher checks the manifest, finds
-              the runtime and extractor, and asks the runtime for <code>--version-json</code>.
+              Install a build <code>.zip</code> (it is unpacked into the data folder), or add a build folder that contains{" "}
+              <code>randcrw-manifest.json</code> (used in place). The launcher checks the manifest, finds the runtime and
+              extractor, and asks the runtime for <code>--version-json</code>.
             </p>
           </div>
-          <button className="btn btn-primary btn-sm" onClick={add} disabled={pending !== null}>
-            <IconPlus size={16} /> Add build folder…
-          </button>
+          <div className="row">
+            <button className="btn btn-primary btn-sm" onClick={installZip} disabled={pending !== null || installing}>
+              <IconDownload size={16} /> {installing ? "Installing…" : "Install from zip…"}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={add} disabled={pending !== null || installing}>
+              <IconPlus size={16} /> Add build folder…
+            </button>
+          </div>
         </div>
       </div>
       {list.length === 0 ? (
@@ -296,6 +361,7 @@ function Development() {
                   <div className="dev-title">
                     <span>{info.manifest ? `randcrw ${info.manifest.version}` : "Unknown build"}</span>
                     {info.manifest && <span className="badge">{info.manifest.game.toUpperCase()}</span>}
+                    {v.managed && <span className="badge">Installed</span>}
                     {isActive && <ActiveBadge />}
                   </div>
                   <div className="dev-path mono" title={v.path}>
@@ -329,14 +395,34 @@ function Development() {
                   <button className="btn btn-ghost btn-sm btn-icon" title="Open folder" onClick={() => void run(() => backend.openFolder(`path:${v.path}`))}>
                     <IconFolder size={16} />
                   </button>
-                  <button className="btn btn-ghost btn-sm btn-icon is-danger" title="Remove from list (files stay)" onClick={() => void remove(v.path)}>
-                    <IconTrash size={16} />
-                  </button>
+                  {v.managed ? (
+                    <button className="btn btn-ghost btn-sm btn-icon is-danger" title="Delete this installed build" onClick={() => setConfirmDelete(info)}>
+                      <IconTrash size={16} />
+                    </button>
+                  ) : (
+                    <button className="btn btn-ghost btn-sm btn-icon is-danger" title="Remove from list (files stay)" onClick={() => void remove(info)}>
+                      <IconTrash size={16} />
+                    </button>
+                  )}
                 </div>
               </li>
             );
           })}
         </ul>
+      )}
+      {confirmDelete && (
+        <Modal
+          title={`Delete randcrw ${confirmDelete.manifest?.version ?? confirmDelete.ref.id}?`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={() => void remove(confirmDelete)}
+          onClose={() => setConfirmDelete(null)}
+        >
+          <p>
+            This deletes the installed build in <code>{confirmDelete.path}</code>. Your game data, saves and settings stay.
+            You can install it again from its zip.
+          </p>
+        </Modal>
       )}
     </>
   );

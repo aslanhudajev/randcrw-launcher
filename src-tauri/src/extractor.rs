@@ -69,6 +69,28 @@ pub struct JobSpec {
 }
 
 impl JobSpec {
+    /// A job for `game` run by the extractor of version `v`, with the data root's folders.
+    pub fn new(
+        kind: JobKind,
+        game: &str,
+        v: &crate::versions::ResolvedVersion,
+        layout: &crate::paths::Layout,
+        iso: Option<PathBuf>,
+        ntsc_only: bool,
+    ) -> JobSpec {
+        JobSpec {
+            kind,
+            game: game.to_string(),
+            extractor: v.extractor.clone(),
+            workdir: v.dir.clone(),
+            iso,
+            ntsc_only,
+            data_dir: layout.game_data_dir(game),
+            staging_dir: layout.game_staging_dir(game),
+            logs_dir: layout.logs_dir(),
+        }
+    }
+
     pub fn args(&self) -> Vec<String> {
         let s = |p: &Path| p.to_string_lossy().into_owned();
         match self.kind {

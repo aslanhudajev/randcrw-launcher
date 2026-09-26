@@ -91,20 +91,11 @@
   font-size: 1.12rem;
   letter-spacing: 0.02em;
   color: var(--text);
+  white-space: nowrap;
 }
 .tb-name b {
   font-weight: 400;
   color: var(--orange);
-}
-.tb-sub {
-  margin-left: 4px;
-  padding-left: 11px;
-  border-left: 1px solid #33425f;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-3);
-  white-space: nowrap;
 }
 .tb-spacer {
   flex: 1;

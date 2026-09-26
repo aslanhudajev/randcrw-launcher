@@ -4,7 +4,8 @@
 // URL parameters:
 //   ?mock=not-installed | installed | extracting | verifying | error21 | error20 | sequel | no-version | stale | playing
 //   ?iso=<file name>   what the fake file dialog returns (e.g. "Ratchet & Clank (Europe).iso" -> error 21)
-//   ?runtime=3|4       the fake game refuses to start with that exit code
+//   ?runtime=2|3|4|101 the fake game refuses to start with that exit code (101: a crash)
+//   ?zip=<file name>   what the fake .zip dialog returns ("bad" in the name: not a build)
 //   ?autoplay=1        press Play on load (for screenshots of the launch path)
 
 import type { Backend, Unlisten } from "./api";
@@ -125,7 +126,10 @@ export function createMockBackend(): Backend {
     official: { enabled: false, owner: "randcrw", repo: "randcrw" },
     dev_versions: noVersion ? [] : [{ path: DEV_BUILD }, { path: `${HOME}/Downloads/randcrw-old` }],
     ntsc_only: false,
+    minimize_while_playing: false,
   };
+  // Launcher-installed development versions (from "Install from zip…"), by folder name.
+  const installedZips = new Set<string>(noVersion ? [] : ["0.1.0"]);
   let dataRoot = DEFAULT_ROOT;
   let installed: ExtractInfo | null = ["installed", "verifying", "stale", "playing"].includes(scenario)
     ? { disc: "SCUS_971.99", data_format: 1, extractor_version: "0.1.0-dev", ntsc_only: false, files: FILES.length, bytes: TOTAL }
@@ -150,7 +154,7 @@ export function createMockBackend(): Backend {
     default_data_root: DEFAULT_ROOT,
     settings: structuredClone(settings),
     active: settings.active_version
-      ? { ref: settings.active_version, version: "0.1.0-dev", game: "rac1", data_format: devManifest().data_format, problem: null }
+      ? { ref: settings.active_version, version: devInfo(settings.active_version.id).manifest?.version ?? null, game: "rac1", data_format: devManifest().data_format, problem: null }
       : null,
     job: job ? { job: job.job, kind: job.kind, game: job.game } : null,
     game_running: running,
@@ -229,14 +233,17 @@ export function createMockBackend(): Backend {
 
   const devInfo = (path: string): VersionInfo => {
     const ref: VersionRef = { source: "development", id: path };
-    const good = path === DEV_BUILD || path.includes("/dist/");
+    const managed = !path.startsWith("/");
+    const good = managed || path === DEV_BUILD || path.includes("/dist/");
+    const manifest = good ? { ...devManifest(), ...(managed ? { version: path } : {}) } : null;
     return {
       ref,
-      path,
-      manifest: good ? devManifest() : null,
-      runtime: good ? { name: "randcrw", version: "0.1.0-dev", game: "rac1", data_format: devManifest().data_format } : null,
+      path: managed ? `${dataRoot}/versions/development/${path}` : path,
+      manifest,
+      runtime: manifest ? { name: "randcrw", version: manifest.version, game: "rac1", data_format: manifest.data_format } : null,
       problem: good ? null : `No randcrw-manifest.json in ${path}`,
       active: settings.active_version?.id === path,
+      managed,
     };
   };
 
@@ -246,6 +253,8 @@ export function createMockBackend(): Backend {
     installed: game === "rac1" && installed !== null,
     info: game === "rac1" ? installed : null,
     stale: scenario === "stale" && installed !== null,
+    expected_format: settings.active_version ? devManifest().data_format : null,
+    active_version: settings.active_version ? "0.1.0-dev" : null,
     job: job && job.game === game ? { job: job.job, kind: job.kind, game: job.game } : null,
     running: running === game,
   });
@@ -290,6 +299,7 @@ export function createMockBackend(): Backend {
       const refuse = Number(params.get("runtime") ?? 0);
       const messages: Record<number, string> = {
         2: "error: --data-dir needs a value",
+        101: "thread 'main' panicked at crates/rc-engine/src/main.rs: index out of bounds",
         3: `error: ${dataRoot}/games/${game}/data is not a complete randcrw data folder (no toc.bin)`,
         4: "error: data_format 1 in extract-info.json does not match this build (2)",
       };
@@ -297,13 +307,18 @@ export function createMockBackend(): Backend {
         () => {
           running = null;
           exitL.forEach((cb) =>
-            cb({ game, code: refuse || 0, log: `${dataRoot}/logs/${game}.log`, message: refuse ? (messages[refuse] ?? null) : null }),
+            cb({ game, code: refuse || 0, log: `${dataRoot}/logs/${game}-1790000000.log`, message: refuse && refuse !== 101 ? (messages[refuse] ?? null) : null }),
           );
         },
         refuse ? 300 : 4000,
       );
     },
     openFolder: async (which) => console.info("[mock] open folder", which),
+    openLog: async (path) => console.info("[mock] reveal log", path),
+    setMinimizeWhilePlaying: async (value) => {
+      settings.minimize_while_playing = value;
+      return snapshot();
+    },
     openUrl: async (url) => console.info("[mock] open url", url),
     pickFolder: async (title) => {
       await sleep(120);
@@ -318,7 +333,26 @@ export function createMockBackend(): Backend {
       settings.ntsc_only = value;
       return snapshot();
     },
-    listVersions: async () => settings.dev_versions.map((d) => ({ ...devInfo(d.path), runtime: null })),
+    listVersions: async () =>
+      [...[...installedZips].sort().reverse(), ...settings.dev_versions.map((d) => d.path)].map((id) => ({ ...devInfo(id), runtime: null })),
+    pickZip: async () => {
+      await sleep(120);
+      return `${HOME}/Downloads/${params.get("zip") ?? "randcrw-0.2.0-macos-arm64.zip"}`;
+    },
+    installVersionZip: async (path) => {
+      busy();
+      await sleep(900);
+      if (/bad/i.test(path)) throw "This archive is not a randcrw build: there is no randcrw-manifest.json at its top level.";
+      const version = path.match(/randcrw-([0-9][^-]*)/)?.[1] ?? "0.2.0";
+      installedZips.add(version);
+      return devInfo(version);
+    },
+    uninstallVersion: async (vref) => {
+      busy();
+      installedZips.delete(vref.id);
+      if (settings.active_version?.id === vref.id) settings.active_version = null;
+      return snapshot();
+    },
     addDevVersion: async (path) => {
       await sleep(250);
       if (!settings.dev_versions.some((d) => d.path === path)) settings.dev_versions.push({ path });

@@ -26,7 +26,8 @@ export interface JobView {
 }
 
 export interface JobResult {
-  /** `launch`: the runtime refused to start (exit 2, 3 or 4). */
+  /** `launch`: the game exited with an error (2, 3, 4: refused to start; anything else: a
+   * crash; code -1: killed by a signal). */
   kind: JobKind | "launch";
   game: string;
   status: FinishStatus;
@@ -34,6 +35,8 @@ export interface JobResult {
   message: string;
   disc: DiscView | null;
   at: number;
+  /** The game's log file (launch results). */
+  log?: string;
 }
 
 export interface Toast {
@@ -148,13 +151,13 @@ export function LauncherProvider({ backend, children }: { backend: Backend; chil
       );
       unlisten.push(
         await backend.onGameExited((p) => {
-          if (p.code === 2 || p.code === 3 || p.code === 4) {
+          if (p.code !== 0) {
+            const code = p.code ?? -1;
+            const message = p.message ?? (p.code === null ? "The game was stopped by a signal." : `The game exited with code ${p.code}.`);
             setResults((r) => ({
               ...r,
-              [p.game]: { kind: "launch", game: p.game, status: "error", code: p.code!, message: p.message ?? `exit code ${p.code}`, disc: null, at: Date.now() },
+              [p.game]: { kind: "launch", game: p.game, status: "error", code, message, disc: null, at: Date.now(), log: p.log },
             }));
-          } else if (p.code !== 0) {
-            toast(p.code === null ? "The game was stopped." : `The game exited with code ${p.code}. See the logs folder.`, "warn");
           }
           setStatusTick((t) => t + 1);
           void backend.getSnapshot().then(setSnapshot);

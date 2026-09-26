@@ -20,7 +20,7 @@ export function Help() {
           <h3>Getting going</h3>
           <ol className="steps">
             <li>
-              <b>Pick a game version.</b> Settings → Version Management. For now, add a Development build folder.
+              <b>Pick a game version.</b> Settings → Version Management → Development: install a build .zip (or add a build folder) and set it active.
             </li>
             <li>
               <b>Install via ISO.</b> Choose a disc image of your own Ratchet & Clank (US, SCUS-97199). It is read once.
@@ -50,7 +50,7 @@ export function Help() {
         <div className="card plate about">
           <h3>About</h3>
           <p>
-            <b>randcrw</b> stands for <b>Ratchet &amp; Clank: ReWrite</b>: the PlayStation 2 game rebuilt natively, from
+            <b>Ratchet &amp; Clank: ReWrite</b> (randcrw for short) is the PlayStation 2 game rebuilt natively, from
             scratch, to run on today's computers with the data from your own disc. Launcher v
             {snapshot?.launcher_version ?? "…"}.
           </p>

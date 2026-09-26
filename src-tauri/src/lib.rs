@@ -5,6 +5,7 @@ mod commands;
 pub mod contract;
 pub mod extractor;
 pub mod github;
+pub mod install;
 pub mod launch;
 pub mod paths;
 pub mod settings;
@@ -32,6 +33,8 @@ pub fn run() {
             commands::cancel_job,
             commands::uninstall_game,
             commands::launch_game,
+            commands::open_log,
+            commands::set_minimize_while_playing,
             commands::open_folder,
             commands::open_url,
             commands::pick_folder,
@@ -39,6 +42,9 @@ pub fn run() {
             commands::set_ntsc_only,
             commands::list_versions,
             commands::add_dev_version,
+            commands::pick_zip,
+            commands::install_version_zip,
+            commands::uninstall_version,
             commands::validate_version,
             commands::remove_dev_version,
             commands::set_active_version,

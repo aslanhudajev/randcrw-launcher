@@ -31,6 +31,9 @@ export interface Backend {
   cancelJob(): Promise<boolean>;
   uninstallGame(game: string): Promise<void>;
   launchGame(game: string): Promise<void>;
+  /** Shows a log file (inside the logs folder) in the file manager. */
+  openLog(path: string): Promise<void>;
+  setMinimizeWhilePlaying(value: boolean): Promise<AppSnapshot>;
 
   openFolder(which: FolderId): Promise<void>;
   openUrl(url: string): Promise<void>;
@@ -40,13 +43,19 @@ export interface Backend {
 
   listVersions(): Promise<VersionInfo[]>;
   addDevVersion(path: string): Promise<VersionInfo>;
+  pickZip(): Promise<string | null>;
+  /** Unpacks a build zip into versions/development/<version>/ and validates it. */
+  installVersionZip(path: string): Promise<VersionInfo>;
+  /** Deletes a launcher-installed version (managed: true). */
+  uninstallVersion(vref: VersionRef): Promise<AppSnapshot>;
   validateVersion(vref: VersionRef): Promise<VersionInfo>;
   removeDevVersion(path: string): Promise<AppSnapshot>;
   setActiveVersion(vref: VersionRef): Promise<AppSnapshot>;
 
   officialReleases(): Promise<OfficialRelease[]>;
   setOfficialConfig(enabled: boolean, owner: string, repo: string): Promise<AppSnapshot>;
-  downloadOfficial(version: string): Promise<string>;
+  /** Downloads and installs a release into versions/official/<tag>/. */
+  downloadOfficial(version: string): Promise<VersionInfo>;
 
   onExtractorEvent(cb: (p: EventPayload) => void): Promise<Unlisten>;
   onExtractorFinished(cb: (p: FinishedPayload) => void): Promise<Unlisten>;

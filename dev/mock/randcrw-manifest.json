@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "randcrw",
+  "version": "0.1.0-mock",
+  "game": "rac1",
+  "runtime": "randcrw",
+  "extractor": "randcrw-extract",
+  "supported_discs": ["SCUS_971.99"],
+  "data_format": 1
+}

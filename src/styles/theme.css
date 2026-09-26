@@ -1,0 +1,425 @@
+/* randcrw launcher theme: deep-space navy and gunmetal panels, Ratchet orange, Clank green,
+   bolt yellow. Chamfered plates with bevels and hex-bolt details. */
+
+:root {
+  --space-0: #070b15;
+  --space-1: #0b1120;
+  --space-2: #111a2d;
+  --gun-1: #172134;
+  --gun-2: #1e2a40;
+  --gun-3: #2a3852;
+  --gun-4: #3a4a68;
+  --steel: #7d8ba6;
+  --steel-hi: #b9c4d8;
+
+  --orange: #f28c28;
+  --orange-hi: #ffac4f;
+  --orange-lo: #c4601a;
+  --orange-deep: #7a3510;
+  --green: #5fd46a;
+  --green-hi: #9cff9f;
+  --green-lo: #2d8a3c;
+  --bolt: #ffd23f;
+  --red: #ff5d4d;
+  --cyan: #56c8ff;
+
+  --text: #eaf0fa;
+  --text-2: #b4c0d6;
+  --text-3: #7f8ca6;
+
+  --font-display: "Russo One", "Exo 2", system-ui, sans-serif;
+  --font-ui: "Exo 2", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --chamfer: 12px;
+  --radius: 4px;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  color-scheme: dark;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.45;
+  font-weight: 450;
+  color: var(--text);
+  background: var(--space-0);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--orange) 45%, transparent);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+code,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+code {
+  color: var(--orange-hi);
+  background: #0006;
+  padding: 0.05em 0.35em;
+  border-radius: 3px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.muted {
+  color: var(--text-3);
+}
+.small {
+  font-size: 0.86em;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--bolt);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Plate: a chamfered metal panel. The element's own background is the rim; ::before is the
+   face, inset by 1px with the same chamfer. */
+
+.plate {
+  --c: var(--chamfer);
+  --rim: linear-gradient(170deg, #50607e, #26324a 40%, #1a2335);
+  --face: linear-gradient(180deg, #1b263b 0%, #141d2e 100%);
+  position: relative;
+  isolation: isolate;
+  background: var(--rim);
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  box-shadow: 0 10px 30px #0008;
+}
+.plate::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  background: var(--face);
+  clip-path: polygon(
+    calc(var(--c) - 0.4px) 0,
+    100% 0,
+    100% calc(100% - var(--c) + 0.4px),
+    calc(100% - var(--c) + 0.4px) 100%,
+    0 100%,
+    0 calc(var(--c) - 0.4px)
+  );
+  box-shadow:
+    inset 0 1px 0 #ffffff14,
+    inset 0 -2px 0 #0006;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Buttons */
+
+.btn {
+  --c: 9px;
+  --bg: linear-gradient(180deg, #33415d, #243048);
+  --bg-hover: linear-gradient(180deg, #3d4d6d, #2a3752);
+  --fg: var(--text);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55em;
+  padding: 0.62em 1.15em;
+  border: 0;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg);
+  background: var(--bg);
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  box-shadow:
+    inset 0 1px 0 #ffffff2a,
+    inset 0 -2px 0 #0005;
+  cursor: pointer;
+  transition:
+    transform 0.16s var(--ease),
+    filter 0.16s var(--ease),
+    background 0.2s var(--ease);
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+  filter: brightness(0.92);
+}
+.btn:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.2) brightness(0.7);
+  opacity: 0.6;
+}
+
+.btn-primary {
+  --bg: linear-gradient(180deg, var(--orange-hi) 0%, var(--orange) 45%, var(--orange-lo) 100%);
+  --bg-hover: linear-gradient(180deg, #ffc071 0%, #ff9c3a 45%, #d86c1f 100%);
+  --fg: #2a1204;
+  text-shadow: 0 1px 0 #ffffff40;
+}
+.btn-primary:hover:not(:disabled) {
+  filter: drop-shadow(0 0 10px #f28c2866);
+}
+
+.btn-danger {
+  --bg: linear-gradient(180deg, #ff7a6b, #e0483a 50%, #a92b21);
+  --bg-hover: linear-gradient(180deg, #ff8e80, #ee5446 50%, #b8342a);
+  --fg: #2a0703;
+}
+
+.btn-ghost {
+  --bg: linear-gradient(180deg, #25314a, #1a2438);
+  --bg-hover: linear-gradient(180deg, #2f3d5a, #212c44);
+  --fg: var(--text-2);
+}
+.btn-ghost:hover:not(:disabled) {
+  --fg: var(--text);
+}
+.btn-ghost.is-danger:hover:not(:disabled) {
+  --fg: var(--red);
+}
+
+.btn-sm {
+  --c: 7px;
+  padding: 0.5em 0.9em;
+  font-size: 0.78rem;
+}
+.btn-lg {
+  --c: 13px;
+  padding: 0.95em 1.7em;
+  font-size: 1.08rem;
+}
+.btn-icon {
+  padding: 0.5em 0.6em;
+}
+.btn-square {
+  --c: 11px;
+  width: 58px;
+  height: 58px;
+  padding: 0;
+}
+.btn-square.is-open {
+  --bg: linear-gradient(180deg, #3d4d6d, #2a3752);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Chips, badges, toggles, inputs */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.12em 0.55em;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  background: #ffffff10;
+  border: 1px solid #ffffff1c;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.badge.is-ok {
+  color: var(--green-hi);
+  background: #5fd46a1c;
+  border-color: #5fd46a55;
+}
+.badge.is-accent {
+  color: var(--orange-hi);
+  background: #f28c281c;
+  border-color: #f28c2855;
+}
+
+.soon-tag {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bolt);
+  border: 1px solid #ffd23f55;
+  padding: 0.05em 0.45em;
+  border-radius: 3px;
+}
+
+.toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75em;
+  cursor: pointer;
+}
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.toggle-ui {
+  flex: none;
+  position: relative;
+  width: 40px;
+  height: 22px;
+  margin-top: 1px;
+  background: #0b1120;
+  border: 1px solid var(--gun-4);
+  border-radius: 12px;
+  box-shadow: inset 0 2px 4px #0008;
+  transition: background 0.2s var(--ease);
+}
+.toggle-ui::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #c8d2e4, #7d8ba6);
+  box-shadow: 0 1px 2px #0009;
+  transition: transform 0.2s var(--ease);
+}
+.toggle input:checked + .toggle-ui {
+  background: linear-gradient(180deg, var(--green-lo), #1f6a2c);
+  border-color: var(--green);
+}
+.toggle input:checked + .toggle-ui::after {
+  transform: translateX(18px);
+  background: linear-gradient(180deg, #eaffea, var(--green-hi));
+}
+.toggle input:focus-visible + .toggle-ui {
+  outline: 2px solid var(--bolt);
+  outline-offset: 2px;
+}
+
+input[type="text"],
+input:not([type]) {
+  font: inherit;
+  color: var(--text);
+  background: #0b1120;
+  border: 1px solid var(--gun-4);
+  border-radius: var(--radius);
+  padding: 0.45em 0.65em;
+  box-shadow: inset 0 2px 4px #0007;
+  user-select: text;
+  -webkit-user-select: text;
+}
+input:focus {
+  outline: none;
+  border-color: var(--orange);
+}
+
+.path-field {
+  padding: 0.65em 0.85em;
+  background: #080d18;
+  border: 1px solid #2b3853;
+  border-radius: var(--radius);
+  box-shadow: inset 0 2px 6px #000a;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Progress bar with bolt-yellow HUD fill and tick marks. */
+.pbar {
+  position: relative;
+  height: 14px;
+  background: #070c17;
+  border: 1px solid #2c3a55;
+  box-shadow: inset 0 2px 5px #000c;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  overflow: hidden;
+}
+.pbar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background:
+    repeating-linear-gradient(-45deg, #ffffff22 0 8px, transparent 8px 16px),
+    linear-gradient(180deg, #ffe07a, var(--bolt) 40%, var(--orange) 100%);
+  background-size:
+    22.6px 22.6px,
+    100% 100%;
+  box-shadow: 0 0 12px #ffd23f88;
+  transition: width 0.25s linear;
+  animation: pbar-stripes 0.9s linear infinite;
+}
+.pbar.is-indeterminate .pbar-fill {
+  width: 30%;
+  animation:
+    pbar-stripes 0.9s linear infinite,
+    pbar-sweep 1.4s var(--ease) infinite;
+}
+.pbar-ticks {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), #0007 calc(10% - 1px) 10%);
+  pointer-events: none;
+}
+@keyframes pbar-stripes {
+  to {
+    background-position:
+      22.6px 0,
+      0 0;
+  }
+}
+@keyframes pbar-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

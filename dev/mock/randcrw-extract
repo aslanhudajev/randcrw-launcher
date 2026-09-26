@@ -1,0 +1,175 @@
+#!/usr/bin/env node
+// Mock randcrw-extract: speaks launcher contract v0 (docs/contract.md), including the game
+// side's clarifications: one terminal done/error line, disc extras (game/title/elf_sha1),
+// extract = identify + copy (hashed while copying), .partial files, extract-info.json last.
+//
+// Choosing an outcome:
+//   RANDCRW_MOCK_ERROR=<code>     fail with that contract code at the stage it belongs to
+//   ISO file name containing errNN (e.g. "rac1-err31.iso") does the same
+//   "pal"/"europe" -> 21 (RC1 PAL), "rac2"/"commando" -> 21 (sequel), "rac3"/"arsenal",
+//   "deadlocked" likewise, "notrac" -> 20 (another PS2 game), ".bin" -> 11
+//   RANDCRW_MOCK_SECONDS=<n>      length of the copy stage (default 5; the real one takes 3-8 s)
+//   RANDCRW_MOCK_VERIFY_FAIL=1    or a ".mock-corrupt" file in the data dir -> verify fails (40)
+"use strict";
+const fs = require("fs");
+const path = require("path");
+
+const VERSION = "0.1.0-mock";
+const MESSAGES = {
+  10: "cannot read the image: it has fewer sectors than its volume descriptor declares (truncated)",
+  11: "not an ISO 9660 image (only 2048-byte-sector .iso images are supported)",
+  20: "not a Ratchet & Clank disc: boot ELF SLUS_203.12 is another game",
+  21: "Ratchet & Clank build SCES_509.16 (PAL) is recognised but not supported yet",
+  30: "write failure: permission denied",
+  31: "not enough disk space: need 4.02 GiB, 1.10 GiB free",
+  40: "verification failed: 2 files do not match (levels/05/gameplay_ntsc.bin, global/sound/vag.bin)",
+  99: "internal error: unexpected end of sector table",
+};
+const STAGE_OF = { 10: "identify", 11: "identify", 20: "identify", 21: "identify", 30: "copy", 31: "copy", 40: "copy", 99: "copy" };
+const DISCS = {
+  ok: { serial: "SCUS_971.99", region: "NTSC-U", version: "1.00", supported: true, game: "rac1", title: "Ratchet & Clank", elf_sha1: "72fd0000mock0000000000000000000000000000" },
+  pal: { serial: "SCES_509.16", region: "PAL", version: "1.00", supported: false, game: "rac1", title: "Ratchet & Clank", elf_sha1: "0000mock" },
+  rac2: { serial: "SCUS_972.68", region: "NTSC-U", version: "1.00", supported: false, game: "rac2", title: "Ratchet & Clank: Going Commando", elf_sha1: "0000mock" },
+  rac3: { serial: "SCUS_973.53", region: "NTSC-U", version: "1.00", supported: false, game: "rac3", title: "Ratchet & Clank: Up Your Arsenal", elf_sha1: "0000mock" },
+  racdl: { serial: "SCUS_974.65", region: "NTSC-U", version: "1.00", supported: false, game: "racdl", title: "Ratchet: Deadlocked", elf_sha1: "0000mock" },
+  other: { serial: "SLUS_203.12", region: "NTSC-U", version: "1.00", supported: false, game: "unknown", title: "", elf_sha1: "0000mock" },
+};
+const FILES = [
+  ["boot/SYSTEM.CNF", 64], ["boot/SCUS_971.99", 3_280_000], ["toc.bin", 13_000],
+  ["global/armor.wad", 18_400_000], ["global/gadgets.wad", 44_100_000], ["global/hud.wad", 22_900_000],
+  ["global/sound/vag.bin", 312_000_000], ["global/sound/music.bin", 402_000_000],
+];
+for (let i = 0; i <= 19; i++) {
+  const n = String(i).padStart(2, "0");
+  FILES.push([`levels/${n}/gameplay_ntsc.bin`, 58_000_000 + i * 3_700_000]);
+  FILES.push([`levels/${n}/gameplay_pal.bin`, 1_900_000 + i * 70_000]);
+}
+for (let i = 21; i <= 39; i++) FILES.push([`global/mpegs/${String(i).padStart(3, "0")}.pss`, 62_000_000 + i * 900_000]);
+const PAL_ONLY = (f) => f.includes("_pal") || /^global\/mpegs\/0(2[1-9]|3\d)\.pss$/.test(f);
+
+const emit = (o) => process.stdout.write(JSON.stringify(o) + "\n");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const t0 = Date.now();
+
+function arg(name) {
+  const i = process.argv.indexOf(name);
+  if (i >= 0) return process.argv[i + 1];
+  const eq = process.argv.find((a) => a.startsWith(`${name}=`));
+  return eq ? eq.slice(name.length + 1) : undefined;
+}
+function fail(code, message) {
+  emit({ type: "error", code, message: message || MESSAGES[code] || `mock error ${code}` });
+  process.exit(code);
+}
+function outcome(iso) {
+  const name = path.basename(iso || "").toLowerCase();
+  const forced = process.env.RANDCRW_MOCK_ERROR || (name.match(/err(\d\d)/) || [])[1];
+  if (forced) return { err: Number(forced), disc: Number(forced) === 21 ? DISCS.pal : Number(forced) === 20 ? DISCS.other : DISCS.ok };
+  if (name.endsWith(".bin")) return { err: 11 };
+  if (name.includes("notrac")) return { err: 20, disc: DISCS.other };
+  if (name.includes("rac2") || name.includes("commando")) return { err: 21, disc: DISCS.rac2 };
+  if (name.includes("rac3") || name.includes("arsenal")) return { err: 21, disc: DISCS.rac3 };
+  if (name.includes("deadlocked")) return { err: 21, disc: DISCS.racdl };
+  if (name.includes("pal") || name.includes("europe")) return { err: 21, disc: DISCS.pal };
+  return { err: 0, disc: DISCS.ok };
+}
+
+async function identify(iso, o) {
+  if (!iso) fail(99, "usage: randcrw-extract extract --iso <path> --out <dir> [--ntsc-only] [--json]");
+  if (!fs.existsSync(iso)) fail(10, `cannot open ${iso}: no such file`);
+  if (o.err === 10 || o.err === 11) fail(o.err);
+  for (let i = 1; i <= 4; i++) {
+    emit({ type: "progress", stage: "identify", done: i * 820_000, total: 3_280_000, file: "SCUS_971.99" });
+    await sleep(60);
+  }
+  if (o.disc) emit({ type: "disc", ...o.disc });
+  if (o.err === 20 || o.err === 21) {
+    if (o.err === 21) emit({ type: "info", message: "new build DB row: (\"SCES_509.16\", \"0000mock\", Region::Pal, \"1.00\")," });
+    fail(o.err, o.err === 21 && o.disc ? `${o.disc.title} ${o.disc.serial} (${o.disc.region}) is not supported yet` : undefined);
+  }
+}
+
+async function extract() {
+  const iso = arg("--iso") || process.env.RC_ISO;
+  const out = arg("--out");
+  const ntscOnly = process.argv.includes("--ntsc-only");
+  const o = outcome(iso);
+  if (!out) fail(99, "usage: randcrw-extract extract --iso <path> --out <dir> [--ntsc-only] [--json]");
+  await identify(iso, o);
+  fs.mkdirSync(out, { recursive: true });
+  fs.rmSync(path.join(out, "extract-info.json"), { force: true });
+  for (const f of walk(out)) if (f.endsWith(".partial")) fs.rmSync(f, { force: true });
+  emit({ type: "info", message: `extracting to ${out}` });
+  const files = FILES.filter(([f]) => !(ntscOnly && PAL_ONLY(f)));
+  const total = files.reduce((a, [, s]) => a + s, 0);
+  const seconds = Number(process.env.RANDCRW_MOCK_SECONDS || 5);
+  const frameMs = 100; // the real extractor rate-limits to about 10 lines a second
+  const frames = Math.max(1, Math.round((seconds * 1000) / frameMs));
+  let written = 0;
+  let fileIdx = 0;
+  for (let fr = 1; fr <= frames; fr++) {
+    const done = Math.round((total * fr) / frames);
+    while (fileIdx < files.length && written + files[fileIdx][1] <= done) {
+      writeFile(out, files[fileIdx][0]);
+      written += files[fileIdx][1];
+      fileIdx++;
+    }
+    const current = files[Math.min(fileIdx, files.length - 1)][0];
+    emit({ type: "progress", stage: "copy", done, total, file: current });
+    if (STAGE_OF[o.err] === "copy" && done > total * 0.55) fail(o.err);
+    await sleep(frameMs);
+  }
+  while (fileIdx < files.length) writeFile(out, files[fileIdx++][0]);
+  const info = { disc: "SCUS_971.99", data_format: 1, extractor_version: VERSION, ntsc_only: ntscOnly, files: files.length, bytes: total };
+  fs.writeFileSync(path.join(out, "extract-info.json.tmp"), JSON.stringify(info));
+  fs.renameSync(path.join(out, "extract-info.json.tmp"), path.join(out, "extract-info.json"));
+  emit({ type: "done", elapsed_ms: Date.now() - t0 });
+}
+
+function writeFile(out, f) {
+  const dest = path.join(out, f);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest + ".partial", `mock ${f}\n`);
+  fs.renameSync(dest + ".partial", dest);
+}
+
+function walk(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)],
+  );
+}
+
+async function verify() {
+  const out = arg("--out");
+  if (!out) fail(99, "usage: randcrw-extract verify --out <dir> [--json]");
+  const infoPath = path.join(out, "extract-info.json");
+  if (!fs.existsSync(infoPath)) fail(40, "extract-info.json is missing or unreadable");
+  const info = JSON.parse(fs.readFileSync(infoPath, "utf8"));
+  const files = FILES.filter(([f]) => !(info.ntsc_only && PAL_ONLY(f)));
+  const total = files.reduce((a, [, s]) => a + s, 0);
+  const corrupt = process.env.RANDCRW_MOCK_VERIFY_FAIL === "1" || fs.existsSync(path.join(out, ".mock-corrupt"));
+  const frames = 20;
+  for (let fr = 1; fr <= frames; fr++) {
+    const done = Math.round((total * fr) / frames);
+    emit({ type: "progress", stage: "verify", done, total, file: files[Math.min(files.length - 1, Math.floor((files.length * fr) / frames))][0] });
+    await sleep(100);
+  }
+  if (corrupt || process.env.RANDCRW_MOCK_ERROR === "40") fail(40);
+  emit({ type: "done", elapsed_ms: Date.now() - t0 });
+}
+
+async function main() {
+  const cmd = process.argv[2];
+  if (cmd === "--help" || cmd === "help") {
+    console.log("usage: randcrw-extract identify|extract|verify [--iso <path>] [--out <dir>] [--ntsc-only] [--threads <n>] [--json]");
+  } else if (cmd === "--version") console.log(`randcrw-extract ${VERSION}`);
+  else if (cmd === "identify") {
+    const iso = arg("--iso") || process.env.RC_ISO;
+    await identify(iso, outcome(iso));
+    emit({ type: "done", elapsed_ms: Date.now() - t0 });
+  } else if (cmd === "extract") await extract();
+  else if (cmd === "verify") await verify();
+  else fail(99, "usage: randcrw-extract identify|extract|verify ... --json");
+}
+main().catch((e) => fail(99, String(e)));

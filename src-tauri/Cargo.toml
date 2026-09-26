@@ -1,0 +1,31 @@
+[package]
+name = "randcrw-launcher"
+version = "0.1.0"
+description = "Launcher for randcrw (Ratchet & Clank: ReWrite): installs game data from your own disc image and starts the game"
+authors = ["randcrw contributors"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin name (cargo#8519 on Windows).
+name = "randcrw_launcher_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Official releases (GitHub releases API). rustls so no system OpenSSL is needed on Linux.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

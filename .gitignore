@@ -1,0 +1,26 @@
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+src-tauri/target/
+src-tauri/gen/schemas/
+target/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Local env and editor files
+*.local
+.env
+.env.*
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.sw?
+
+# Local version folders made by dev/make-real-extractor-version.sh
+dev/real/

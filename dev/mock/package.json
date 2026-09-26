@@ -1,0 +1,6 @@
+{
+  "name": "randcrw-mock-tools",
+  "private": true,
+  "type": "commonjs",
+  "description": "Mock randcrw extractor and runtime that speak the launcher contract (docs/contract.md)."
+}

@@ -1,158 +1,152 @@
-# Ratchet & Clank: ReWrite — launcher
+# randcrw Launcher
 
-**Ratchet & Clank: ReWrite** (randcrw for short) is a native Rust rewrite of the PlayStation 2
-game. This is its desktop launcher. It works like the OpenGOAL launcher: pick a game version,
-install the game data once from your own disc image, then play.
+The randcrw launcher installs and updates versions of randcrw (Ratchet & Clank: ReWrite), extracts the game data
+from your own disc image, and starts the game. Mod management is planned. It is built with
+[Tauri](https://v2.tauri.app/).
 
-Tauri 2 + React 19 + TypeScript + Vite. The Rust backend does all file, process, dialog and
-network work; the page is a thin view.
+> [!WARNING]
+> randcrw is an unofficial fan project, not affiliated with or endorsed by Sony Interactive Entertainment or Insomniac
+> Games. You need your own, legally obtained PlayStation 2 disc of Ratchet & Clank (NTSC-U, SCUS-97199, version 1.00).
+> Neither the launcher nor the game contains any game assets.
 
-The launcher ↔ game contract is in [`docs/contract.md`](docs/contract.md).
+- [Usage](#usage)
+- [Asking for help](#asking-for-help)
+- [Development](#development)
+  - [Prerequisites](#prerequisites)
+  - [Building and running](#building-and-running)
+  - [Running a local build of the game](#running-a-local-build-of-the-game)
+  - [Testing without the game](#testing-without-the-game)
+- [Related](#related)
+- [License](#license)
 
-## Commands
+## Usage
+
+Website documentation: coming later. Nothing has been released yet, so for now you need a game build from the game
+repository (see [Running a local build of the game](#running-a-local-build-of-the-game)).
+
+1. **Add a game version.** Settings → Version Management → Development → **Install from zip…** (or **Add build
+   folder…**), then **Set active**. Official releases will be downloadable from Settings → Version Management →
+   Official once they are published.
+2. **Install the game data.** Ratchet & Clank in the sidebar → **Install via ISO**, then pick the image of your disc.
+   The active version's extractor checks the disc, copies the data (about 4.5 GB) and prepares it.
+3. **Play.** The launcher starts the game with the extracted data and shows *Running…* until it exits.
+4. **Optional:** the game screen's **⋯** menu has **Export assets…** (textures, audio, models, levels, collision and
+   text as PNG, WAV, glTF and JSON) and **Re-extract from ISO**.
+
+If the game cannot start, the launcher says why and offers **Re-extract** when the data is missing, incomplete or
+made for another version.
+
+## Asking for help
+
+The launcher has no support-package export. Attach your log files to the report instead: Help → **Logs folder**, or
+Settings → Folders → **Open logs**, opens the folder. Every extraction, verification, asset export and game session
+writes its own file there (`extract-rac1-<time>.log`, `verify-rac1-<time>.log`, `export-rac1-<time>.log`,
+`rac1-<time>.log`). The launcher itself writes no log of its own.
+
+With the default data folder, the logs are in:
+
+- Windows: `C:\Users\<YOUR_USER_NAME>\AppData\Local\randcrw\logs`
+- Linux: `/home/<YOUR_USER_NAME>/.local/share/randcrw/logs` (or `$XDG_DATA_HOME/randcrw/logs` when that is set)
+- macOS: `/Users/<YOUR_USER_NAME>/Library/Application Support/randcrw/logs`
+
+These folders are hidden by default. If you moved the data folder (Settings → Folders), the logs moved with it into
+`<your data folder>/logs`.
+
+## Development
+
+The Tauri 2 backend (Rust, in `src-tauri/`) does all file, process, dialog and network work; the React 19 +
+TypeScript + Vite page in `src/` is a thin view. The interface between the launcher, the extractor and the game is
+in [`docs/contract.md`](docs/contract.md). Development happens on macOS; Windows and Linux are untested.
+
+### Prerequisites
+
+- Rust, stable, through [rustup](https://rustup.rs) (the crate needs 1.77 or later).
+- [Node.js](https://nodejs.org) with npm. `package.json` pins no version; a current LTS works.
+
+Plus the Tauri 2 system dependencies for your OS ([Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)):
+
+#### Windows
+
+Install the [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the
+"Desktop development with C++" workload. WebView2 ships with Windows 10 (1803 and later) and Windows 11; on older
+systems install it as described in the Tauri prerequisites.
+
+#### Linux
+
+On Debian and Ubuntu:
+
+```sh
+sudo apt update
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+Other distributions: see the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/#linux).
+
+#### macOS
+
+```sh
+xcode-select --install
+```
+
+### Building and running
 
 ```sh
 npm install
+npm run tauri dev
+```
 
-npm run dev          # the UI in a normal browser at http://localhost:1420 with a mocked backend
-npm run tauri dev    # the real app (Rust backend, native window)
-npm run build        # typecheck + production frontend build
-npm run tauri build  # release bundle
+Other commands:
 
-cd src-tauri && cargo test     # contract, paths, settings, versions, zip install, extractor jobs, launch
+```sh
+npm run dev                    # the page alone in a browser at http://localhost:1420, with a mocked backend
+npm run build                  # typecheck and production build of the page
+npm run tauri build            # release bundle
+cd src-tauri && cargo test     # backend tests
 cd src-tauri && cargo clippy
 ```
 
-## Trying it with a real game build
-
-The game repo's packaging step makes a release zip, e.g.
-`~/Repos/randcre/dist/randcrw-0.1.0-macos-arm64.zip` (a folder with `randcrw`, `randcrw-extract`,
-`assets/`, `randcrw-manifest.json`). In the app (`npm run tauri dev`, or a `tauri build` bundle):
-
-1. **Install the build.** Settings → Version Management → Development → **Install from zip…**, pick
-   the zip. It is unpacked into `<data root>/versions/development/0.1.0/` and checked (manifest,
-   binaries, `randcrw --version-json`). Press **Set active**; the title bar shows `Runtime v0.1.0`.
-   (Alternatively **Add build folder…** with the unpacked `dist/randcrw-0.1.0-macos-arm64/` folder,
-   used in place.)
-2. **Install the game data.** Ratchet & Clank in the sidebar → **Install via ISO**, pick your
-   `Ratchet & Clank (USA) (En,Fr,De,Es,It).iso`. The active version's extractor copies and checks
-   about 4 GiB into `<data root>/games/rac1/data/` in a few seconds.
-3. **Export assets (optional).** The game screen's **⋯** menu → **Export assets…** picks a folder
-   and the kinds (textures, audio, models, levels, collision, text) and runs the extractor's
-   `export` command on the installed data: PNG, WAV, glTF and JSON for viewing and modding (the
-   whole disc is about 3.5 GB in about 10 s). **Open folder** shows the result.
-4. **Play.** The launcher starts `randcrw --data-dir <data root>/games/rac1/data`; the game window
-   opens and the launcher shows *Running* until it exits (Esc opens the in-game menu, quit from
-   there). Settings → Folders → *While playing* can minimise the launcher meanwhile. The game's
-   output goes to `<data root>/logs/rac1-<unix time>.log`.
-
-If the game refuses to start, the launcher explains it: exit 3 (data missing or incomplete) and
-exit 4 (data made for another version) offer **Re-extract**, a crash says so; each has *Details*
-(the game's `error:` line) and **Open logs**. To try those by hand: point a copy of the data
-somewhere else and break it, or edit `data_format` in `games/rac1/data/extract-info.json` (Play
-then asks for a re-extract before even starting the game; the runtime itself exits 4).
-
-Keep a test run away from your real data with `RANDCRW_DATA_ROOT=/some/dir npm run tauri dev`.
-
-**Official releases** stay off while the game repository is private. Once releases are public:
-Settings → Version Management → Official → *Release feed* → owner/repo → **Enabled**. The download
-button fetches the release's `randcrw-<version>-<os>-<arch>.zip` and installs it through the same
-unpack-and-validate path as *Install from zip…*, into `versions/official/<tag>/`.
-
-### End-to-end test (opt-in)
-
-`src-tauri/tests/e2e_real_build.rs` runs the whole path through the launcher backend: install the
-real zip, extract your ISO with its extractor, start the runtime with
-`RC_SCENE=0 RC_SCREENSHOT_FRAME=300` (it renders frame 300 offscreen, writes a PNG and exits 0),
-then checks runtime exit 3 (bogus data folder) and exit 4 (edited `extract-info.json`). One game
-window opens briefly. The 4 GiB of data and the installed build are deleted afterwards; the PNG and
-the logs stay in `RANDCRW_E2E_OUT`.
+To keep a test run away from your real data folder, point the launcher at another one:
 
 ```sh
-cd src-tauri
-RANDCRW_E2E_ZIP=~/Repos/randcre/dist/randcrw-0.1.0-macos-arm64.zip \
-RANDCRW_E2E_ISO="$HOME/PS2/ratchet1/Ratchet & Clank (USA) (En,Fr,De,Es,It).iso" \
-RANDCRW_E2E_OUT=/tmp/randcrw-e2e \
-cargo test --test e2e_real_build -- --ignored --nocapture
+RANDCRW_DATA_ROOT=/some/dir npm run tauri dev
 ```
 
-### Browser mock
+### Running a local build of the game
 
-`npm run dev` in a browser uses `src/backend/mock.ts` instead of Tauri. URL parameters pick a
-state, which is handy for screenshots:
+In the game repository, `cargo xtask package` makes a version folder and a zip,
+`dist/randcrw-<version>-<os>-<arch>.zip`. In the launcher, Settings → Version Management → Development →
+**Install from zip…** installs it into `<data folder>/versions/development/<version>/`; **Add build folder…** with the
+unpacked `dist/randcrw-<version>-<os>-<arch>/` folder uses it in place instead. Then **Set active**. There is no
+environment variable for this; the Development source is the only way.
 
-| URL | State |
-|---|---|
-| `/` | RAC1 not installed |
-| `/?mock=extracting` | extraction running |
-| `/?mock=error21` (or `error20`) | extraction failed with that code |
-| `/?mock=installed` | ready to play |
-| `/?mock=verifying`, `stale`, `no-version`, `playing` | other states |
-| `/?mock=exporting` (running), `/?mock=exported` (done); `&export=fail31` | asset export |
-| `/?iso=Ratchet%20%26%20Clank%20(Europe).iso` | what the fake file dialog returns |
-| `#/game/rac2`, `#/settings/folders`, `#/settings/versions/development`, `#/help` | screens |
+The game's own documentation for this is `docs/workflows/launcher.md` in the game repository.
 
-### Mock game build
+`src-tauri/tests/e2e_real_build.rs` runs the whole path (install the zip, extract your disc image, start the game,
+check the exit codes) against a real build. It is ignored by default; its environment variables are documented at the
+top of the file.
 
-`dev/mock/` is a complete fake version folder: `randcrw-manifest.json`, a mock extractor
-(`randcrw-extract`) and a mock runtime (`randcrw`), both small Node scripts that speak the
-contract. In the real app, add `dev/mock` under Settings → Version Management → Development, set
-it active, and install from any `.iso` file:
+### Testing without the game
 
-- `dev/mock/make-test-isos.sh <dir>` creates empty test images. The file name steers the
-  outcome: `(USA)` succeeds, `Europe`/`PAL` gives error 21, `notrac` error 20, `errNN` any code.
-- `RANDCRW_MOCK_ERROR=<code>` forces a code, `RANDCRW_MOCK_SECONDS` sets the copy time,
-  `RANDCRW_MOCK_VERIFY_FAIL=1` (or a `.mock-corrupt` file in the data dir) fails verification.
-- The mock runtime answers `--version-json` and "plays" for `RANDCRW_MOCK_RUN_SECONDS` (5).
+- **Browser mock.** `npm run dev` uses `src/backend/mock.ts` instead of the Rust backend. URL parameters pick a state,
+  for example `/?mock=extracting`, `/?mock=installed`, `/?mock=error21`, `/?mock=playing`, or
+  `#/settings/versions/development`. The full list is in `src/backend/mock.ts`.
+- **Mock game version.** `dev/mock/` is a complete fake version folder whose extractor and runtime are small Node
+  scripts that follow the contract. Add it under Settings → Version Management → Development, set it active, and
+  install from any `.iso` file. `dev/mock/make-test-isos.sh <dir>` makes empty test images whose file names steer
+  the outcome: `(USA)` succeeds, `Europe` or `PAL` gives error 21, `notrac` error 20, `errNN` any code.
+  `RANDCRW_MOCK_ERROR=<code>` forces a code, `RANDCRW_MOCK_SECONDS` sets the copy time,
+  `RANDCRW_MOCK_VERIFY_FAIL=1` fails verification, and `RANDCRW_MOCK_RUN_SECONDS` sets how long the mock game runs.
+  These scripts need Node on `PATH` (macOS and Linux).
+- **Real extractor, mock game.** `dev/make-real-extractor-version.sh` makes `dev/real/` (git-ignored) with the game
+  repository's real `randcrw-extract` and the mock runtime. Add that folder under Development instead.
 
-The scripts need Node on `PATH` (macOS and Linux).
+## Related
 
-To try the **real** extractor from the game repo, `dev/make-real-extractor-version.sh` makes
-`dev/real/` (git-ignored): the real `randcrw-extract` plus the mock runtime. Add that folder under
-Development instead.
+- The randcrw game repository (private for now): the game, the extractor, and the packaging that produces the
+  version zips this launcher installs.
 
-`RANDCRW_DATA_ROOT=/some/dir npm run tauri dev` keeps a test run away from your real data root.
+## License
 
-## Structure
-
-```
-src-tauri/src/
-  contract.rs     manifest, extractor JSON lines, error codes, extract-info, --version-json
-  paths.rs        per-OS data root, layout, location pointer, moving the root
-  settings.rs     <root>/settings/launcher.json
-  versions.rs     version sources (official, development), resolve + validate
-  install.rs      installs a build .zip (local file or Official download) into versions/<source>/
-  github.rs       GitHub releases client for the Official source (off by default)
-  extractor.rs    runs randcrw-extract as a cancellable job, staging + promote
-  launch.rs       plans and starts the runtime with --data-dir / RC_DATA_DIR, logs output
-src-tauri/tests/  e2e_real_build.rs (opt-in, needs a real build and your ISO)
-  commands.rs     the Tauri commands the page calls
-src/
-  backend/        contract.ts (types), api.ts (interface), tauri.ts, mock.ts
-  components/     title bar, sidebar, backdrop, modal, menu, progress bar, icons
-  screens/        GameScreen (RAC1), ComingLater (RAC2/3), settings/, Help
-  lib/            games, version sources, error messages, formatting, hash router
-  styles/         fonts.css, theme.css (tokens + primitives), app.css (layout)
-  assets/games/   logos and optional backgrounds (<id>-bg.* is picked up if present)
-  assets/fonts/   bundled OFL fonts, see LICENSES.md
-dev/mock/         mock version folder: manifest, extractor, runtime
-docs/contract.md  the launcher ↔ game contract
-assets-src/icon/  app icon: gen.py writes app-icon.svg (and app-icon-small.svg for 16/32 px)
-```
-
-### Adding a version source (mods)
-
-Sources are listed in one place on each side: `SourceId` + `SourceId::location` in
-`src-tauri/src/versions.rs`, and `SOURCES` in `src/lib/sources.ts`. A Mods source is a new
-variant (installed under `versions/mods/<name>/`, like official builds), its feed, and a list
-component in `screens/settings/Versions.tsx`.
-
-## Art and fonts
-
-- Game logos and backgrounds in `src/assets/games/` are user-provided launcher art. A missing
-  `<id>-bg.*` falls back to a drawn backdrop.
-- Fonts: Russo One and Exo 2, both SIL OFL 1.1, bundled locally
-  (`src/assets/fonts/LICENSES.md`).
-
-randcrw is an unofficial fan project, not affiliated with Sony Interactive Entertainment or
-Insomniac Games. It ships no game data.
+No license is declared: `package.json` is marked private and `src-tauri/Cargo.toml` names no license, and there is no
+license file. The bundled fonts, Russo One and Exo 2, are under the SIL Open Font License 1.1
+([`src/assets/fonts/LICENSES.md`](src/assets/fonts/LICENSES.md)).

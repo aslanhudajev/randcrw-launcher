@@ -3,6 +3,7 @@ name = "rerac-launcher"
 version = "0.1.0"
 description = "Launcher for ReRAC: installs game data from your own disc image and starts the game"
 authors = ["ReRAC contributors"]
+license = "ISC"
 edition = "2021"
 rust-version = "1.77"
 

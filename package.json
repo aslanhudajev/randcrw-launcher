@@ -3,6 +3,7 @@
   "private": true,
   "description": "Launcher for ReRAC",
   "version": "0.1.0",
+  "license": "ISC",
   "type": "module",
   "scripts": {
     "dev": "vite",

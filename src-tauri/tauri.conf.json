@@ -32,6 +32,8 @@
     "active": true,
     "targets": "all",
     "category": "Game",
+    "copyright": "Copyright (c) 2026 ReRAC contributors",
+    "license": "ISC",
     "shortDescription": "Launcher for ReRAC",
     "longDescription": "ReRAC is a native rewrite of the PlayStation 2 game Ratchet & Clank (2002). The launcher installs the game data once from your own disc image, manages game versions and starts the game.",
     "icon": [

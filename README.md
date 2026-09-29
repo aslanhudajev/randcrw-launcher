@@ -198,6 +198,6 @@ The signing lines are in the workflow, commented out; uncomment them once the se
 
 ## License
 
-No license is declared: `package.json` is marked private and `src-tauri/Cargo.toml` names no license, and there is no
-license file. The bundled fonts, Russo One and Exo 2, are under the SIL Open Font License 1.1
+ISC. See [LICENSE](LICENSE). The license covers ReRAC's own code only; it grants no rights to Ratchet & Clank or any of
+its assets. The bundled fonts, Russo One and Exo 2, are under the SIL Open Font License 1.1
 ([`src/assets/fonts/LICENSES.md`](src/assets/fonts/LICENSES.md)).

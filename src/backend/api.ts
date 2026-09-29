@@ -30,9 +30,9 @@ export interface Backend {
   startExtract(game: string, iso: string): Promise<number>;
   startVerify(game: string): Promise<number>;
   /** Where an export into the picked folder goes (the folder itself if empty or an earlier export,
-   * else `randcrw-<game>-exports` inside it). */
+   * else `rerac-<game>-exports` inside it). */
   exportTarget(game: string, picked: string): Promise<string>;
-  /** Runs `randcrw-extract export` on the installed data into `to`. */
+  /** Runs `rerac-extract export` on the installed data into `to`. */
   startExport(game: string, to: string, what: ExportKind[]): Promise<number>;
   cancelJob(): Promise<boolean>;
   uninstallGame(game: string): Promise<void>;

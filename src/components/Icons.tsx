@@ -150,31 +150,6 @@ export const IconFile = (p: P) => (
   </Svg>
 );
 
-/** The hex nut from the app icon (assets-src/icon), flattened for small sizes: the brand mark. */
-export function BoltMark({ size = 22 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <defs>
-        <linearGradient id="bm-face" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#ffc877" />
-          <stop offset=".45" stopColor="#f7942e" />
-          <stop offset="1" stopColor="#c05514" />
-        </linearGradient>
-        <linearGradient id="bm-bore" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#8a3a0e" />
-          <stop offset=".45" stopColor="#0c1224" />
-        </linearGradient>
-      </defs>
-      <g transform="rotate(20 16 16)">
-        <path d="M16 3.2 27.1 9.6v12.8L16 28.8 4.9 22.4V9.6z" fill="#7a300c" transform="translate(0 1.6)" />
-        <path d="M16 3.2 27.1 9.6v12.8L16 28.8 4.9 22.4V9.6z" fill="url(#bm-face)" stroke="#fff0d2" strokeOpacity=".45" strokeWidth=".8" />
-      </g>
-      <circle cx="16" cy="16" r="5.4" fill="#d2701f" />
-      <circle cx="16" cy="16" r="4.4" fill="url(#bm-bore)" />
-    </svg>
-  );
-}
-
 /** Small hex bolt head used as a decorative rivet. */
 export function Rivet({ className }: { className?: string }) {
   return (

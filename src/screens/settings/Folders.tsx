@@ -14,7 +14,7 @@ export function Folders() {
   const sep = root.includes("\\") ? "\\" : "/";
 
   async function chooseTarget() {
-    const t = await run(() => backend.pickFolder("Choose where to keep randcrw's data"));
+    const t = await run(() => backend.pickFolder("Choose where to keep ReRAC's data"));
     if (t) setTarget(t);
   }
   async function move() {
@@ -30,7 +30,7 @@ export function Folders() {
     }
   }
 
-  const dest = target ? (target.endsWith(`${sep}randcrw`) ? target : `${target}${sep}randcrw`) : "";
+  const dest = target ? (target.endsWith(`${sep}rerac`) ? target : `${target}${sep}rerac`) : "";
   return (
     <div className="stack">
       <div className="card plate">

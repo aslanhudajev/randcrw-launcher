@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-const USER_AGENT: &str = concat!("randcrw-launcher/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("rerac-launcher/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GhRelease {
@@ -194,8 +194,8 @@ mod tests {
     #[test]
     fn url_validation() {
         assert_eq!(
-            releases_url("randcrw", "randcrw").unwrap(),
-            "https://api.github.com/repos/randcrw/randcrw/releases?per_page=50"
+            releases_url("re-rac", "rerac").unwrap(),
+            "https://api.github.com/repos/re-rac/rerac/releases?per_page=50"
         );
         assert!(releases_url("a/b", "c").is_err());
         assert!(releases_url("", "c").is_err());
@@ -205,7 +205,7 @@ mod tests {
     fn parses_github_shape() {
         let json = r###"[{"tag_name":"v0.2.0","name":"v0.2.0","published_at":"2026-10-01T12:00:00Z",
             "body":"## Changes\n- Faster loading\n- Fix Novalis","html_url":"https://github.com/o/r/releases/v0.2.0",
-            "draft":false,"prerelease":false,"assets":[{"name":"randcrw-0.2.0-macos-arm64.zip","size":10,
+            "draft":false,"prerelease":false,"assets":[{"name":"rerac-0.2.0-macos-arm64.zip","size":10,
             "browser_download_url":"https://x/a","id":1}]},
             {"tag_name":"v0.3.0-draft","draft":true,"assets":[]}]"###;
         let rel = parse_releases(json).unwrap();
@@ -221,20 +221,20 @@ mod tests {
     #[test]
     fn picks_platform_asset() {
         let assets = vec![
-            asset("randcrw-0.1.0-linux-x86_64.zip"),
-            asset("randcrw-0.1.0-macos-arm64.tar.gz"),
-            asset("randcrw-0.1.0-macos-arm64.zip"),
-            asset("randcrw-0.1.0-macos-x86_64.zip"),
-            asset("randcrw-v1-windows-x64.zip"),
+            asset("rerac-0.1.0-linux-x86_64.zip"),
+            asset("rerac-0.1.0-macos-arm64.tar.gz"),
+            asset("rerac-0.1.0-macos-arm64.zip"),
+            asset("rerac-0.1.0-macos-x86_64.zip"),
+            asset("rerac-v1-windows-x64.zip"),
             asset("checksums.txt"),
         ];
         // The game repo's release name (tools/package/package.sh).
-        assert_eq!(pick_asset(&assets, "macos", "aarch64").unwrap().name, "randcrw-0.1.0-macos-arm64.zip");
-        assert_eq!(pick_asset(&assets, "macos", "x86_64").unwrap().name, "randcrw-0.1.0-macos-x86_64.zip");
-        assert_eq!(pick_asset(&assets, "windows", "x86_64").unwrap().name, "randcrw-v1-windows-x64.zip");
+        assert_eq!(pick_asset(&assets, "macos", "aarch64").unwrap().name, "rerac-0.1.0-macos-arm64.zip");
+        assert_eq!(pick_asset(&assets, "macos", "x86_64").unwrap().name, "rerac-0.1.0-macos-x86_64.zip");
+        assert_eq!(pick_asset(&assets, "windows", "x86_64").unwrap().name, "rerac-v1-windows-x64.zip");
         assert_eq!(pick_asset(&assets, "linux", "aarch64"), None);
-        let universal = vec![asset("randcrw-macos-universal.zip")];
-        assert_eq!(pick_asset(&universal, "macos", "aarch64").unwrap().name, "randcrw-macos-universal.zip");
+        let universal = vec![asset("rerac-macos-universal.zip")];
+        assert_eq!(pick_asset(&universal, "macos", "aarch64").unwrap().name, "rerac-macos-universal.zip");
     }
 
     #[test]

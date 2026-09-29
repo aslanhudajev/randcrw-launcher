@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    randcrw_launcher_lib::run()
+    rerac_launcher_lib::run()
 }

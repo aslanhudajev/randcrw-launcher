@@ -1,10 +1,10 @@
 {
   "schema": 1,
-  "name": "randcrw",
+  "name": "rerac",
   "version": "0.1.0-mock",
   "game": "rac1",
-  "runtime": "randcrw",
-  "extractor": "randcrw-extract",
+  "runtime": "rerac",
+  "extractor": "rerac-extract",
   "supported_discs": ["SCUS_971.99"],
   "data_format": 1
 }

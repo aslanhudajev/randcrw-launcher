@@ -100,7 +100,7 @@ export interface Settings {
 
 export type JobKind = "extract" | "verify" | "export";
 
-/** `randcrw-extract export --what` kinds (game-side clarification 18). */
+/** `rerac-extract export --what` kinds (game-side clarification 18). */
 export type ExportKind = "textures" | "audio" | "models" | "levels" | "collision" | "text";
 
 export interface JobState {

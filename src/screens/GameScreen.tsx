@@ -54,7 +54,7 @@ export function GameScreen({ game, go }: { game: GameDef; go: (p: string) => voi
       return true;
     });
     if (ok) {
-      toast(`Starting randcrw${snapshot?.active?.version ? ` v${snapshot.active.version}` : ""}…`, "info");
+      toast(`Starting ReRAC${snapshot?.active?.version ? ` v${snapshot.active.version}` : ""}…`, "info");
       bumpStatus();
       void refresh();
     }
@@ -362,7 +362,7 @@ function NoVersionPanel({ problem, onOpen }: { problem: string | null; onOpen():
   return (
     <div className="panel notice-panel plate">
       <h3>{problem ? "The active game version can't be used" : "No game version set"}</h3>
-      <p>{problem ?? "Installing and playing need a randcrw build. Add one under Version Management."}</p>
+      <p>{problem ?? "Installing and playing need a ReRAC build. Add one under Version Management."}</p>
       <div className="ep-actions">
         <button className="btn btn-primary btn-sm" onClick={onOpen}>
           Open Version Management
@@ -379,7 +379,7 @@ function StalePanel({ status, onReextract }: { status: GameStatus; onReextract()
     <div className="panel notice-panel plate">
       <h3>Game data needs an update</h3>
       <p>
-        The installed data is format {have}, but randcrw {status.active_version ? `v${status.active_version}` : ""} needs
+        The installed data is format {have}, but ReRAC {status.active_version ? `v${status.active_version}` : ""} needs
         format {want}. Re-extract from your disc image to continue, or switch back to a version that matches.
       </p>
       <div className="ep-actions">

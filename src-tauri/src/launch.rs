@@ -54,7 +54,7 @@ pub fn plan(layout: &Layout, settings: &Settings, game: &str) -> Result<LaunchPl
     let info = extractor::read_install(&data_dir).ok_or("The game data is not installed.")?;
     if info.data_format != v.manifest.data_format {
         return Err(format!(
-            "The installed data is format {}, but randcrw {} needs format {}. Re-extract from your disc image.",
+            "The installed data is format {}, but ReRAC {} needs format {}. Re-extract from your disc image.",
             info.data_format, v.manifest.version, v.manifest.data_format
         ));
     }
@@ -128,7 +128,7 @@ impl GameProcess {
             use std::io::Write;
             let _ = writeln!(
                 log,
-                "$ {} --data-dir {}   (randcrw {}, from {})",
+                "$ {} --data-dir {}   (ReRAC {}, from {})",
                 p.runtime.display(),
                 p.data_dir.display(),
                 p.version,
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn command_passes_data_dir_both_ways() {
-        let c = command(Path::new("/v/bin/randcrw"), Path::new("/v"), Path::new("/r/games/rac1/data"));
+        let c = command(Path::new("/v/bin/rerac"), Path::new("/v"), Path::new("/r/games/rac1/data"));
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
         assert_eq!(args, ["--data-dir", "/r/games/rac1/data"]);
         let env: Vec<_> = c
@@ -253,8 +253,8 @@ mod tests {
         let v = layout.source_dir("development").join("0.1.0");
         fs::create_dir_all(&v).unwrap();
         fs::write(v.join(crate::contract::MANIFEST_FILE), crate::install::tests::MANIFEST).unwrap();
-        fs::write(v.join("randcrw"), "").unwrap();
-        fs::write(v.join("randcrw-extract"), "").unwrap();
+        fs::write(v.join("rerac"), "").unwrap();
+        fs::write(v.join("rerac-extract"), "").unwrap();
         s.active_version = Some(versions::VersionRef { source: versions::SourceId::Development, id: "0.1.0".into() });
         assert!(plan(&layout, &s, "rac1").unwrap_err().contains("not installed"));
 
@@ -265,7 +265,7 @@ mod tests {
         assert!(plan(&layout, &s, "rac1").unwrap_err().contains("format 2"));
         fs::write(data.join("extract-info.json"), info(1)).unwrap();
         let p = plan(&layout, &s, "rac1").unwrap();
-        assert_eq!(p.runtime, v.join("randcrw"));
+        assert_eq!(p.runtime, v.join("rerac"));
         assert_eq!(p.workdir, v);
         assert_eq!(p.data_dir, data);
         assert_eq!(p.logs_dir, layout.logs_dir());

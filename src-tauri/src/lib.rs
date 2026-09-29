@@ -1,4 +1,4 @@
-//! randcrw launcher backend. The page is a thin view; everything that touches files,
+//! ReRAC launcher backend. The page is a thin view; everything that touches files,
 //! processes, dialogs or the network lives here.
 
 mod commands;
@@ -20,8 +20,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let default_root = commands::default_root_or_fallback(app.handle());
-            let env_root = std::env::var_os(paths::ROOT_ENV).map(Into::into);
-            app.manage(commands::Launcher::init(default_root, env_root));
+            let env_root: Option<std::path::PathBuf> = std::env::var_os(paths::ROOT_ENV).map(Into::into);
+            let migrated = if env_root.is_none() { commands::migrate_legacy_root(&default_root) } else { None };
+            let launcher = commands::Launcher::init(default_root, env_root);
+            if let Some(note) = migrated {
+                launcher.log_note(&note);
+            }
+            app.manage(launcher);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -55,5 +60,5 @@ pub fn run() {
             commands::download_official,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running the randcrw launcher");
+        .expect("error while running the ReRAC launcher");
 }

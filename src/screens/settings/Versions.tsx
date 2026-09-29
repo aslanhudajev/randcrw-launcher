@@ -12,7 +12,7 @@ async function warnIfDataMismatch(backend: Backend, toast: (text: string, tone?:
     const st = await backend.gameStatus("rac1");
     if (st.installed && st.stale && st.info) {
       toast(
-        `The installed game data is format ${st.info.data_format}, but randcrw ${st.active_version ?? ""} needs format ${st.expected_format}. Re-extract before playing.`,
+        `The installed game data is format ${st.info.data_format}, but ReRAC ${st.active_version ?? ""} needs format ${st.expected_format}. Re-extract before playing.`,
         "warn",
       );
     }
@@ -92,7 +92,7 @@ function Official() {
     const info = await run(() => backend.downloadOfficial(version));
     setBusy(null);
     if (info) {
-      toast(`Installed randcrw ${info.manifest?.version ?? version}.`, "ok");
+      toast(`Installed ReRAC ${info.manifest?.version ?? version}.`, "ok");
       await load();
     }
   }
@@ -119,7 +119,7 @@ function Official() {
           <div>
             <strong>Official releases will appear here once published.</strong>
             <p className="muted">
-              The randcrw repository is private for now. Until then, use a build from the Development tab.
+              The ReRAC repository is private for now. Until then, use a build from the Development tab.
             </p>
           </div>
         </div>
@@ -270,7 +270,7 @@ function Development() {
   }, [reload, validate, snapshot?.settings.active_version?.id]);
 
   async function add() {
-    const path = await run(() => backend.pickFolder("Choose a randcrw build folder (with randcrw-manifest.json)"));
+    const path = await run(() => backend.pickFolder("Choose a ReRAC build folder (with rerac-manifest.json)"));
     if (!path) return;
     setPending(path);
     const info = await run(() => backend.addDevVersion(path));
@@ -279,7 +279,7 @@ function Development() {
     setChecked((c) => ({ ...c, [info.ref.id]: info }));
     await reload();
     if (info.problem) toast("Added, but the build did not validate. See the details below.", "warn");
-    else toast(`Added randcrw ${info.manifest?.version}.`, "ok");
+    else toast(`Added ReRAC ${info.manifest?.version}.`, "ok");
   }
 
   async function installZip() {
@@ -291,7 +291,7 @@ function Development() {
     if (!info) return;
     setChecked((c) => ({ ...c, [info.ref.id]: info }));
     await reload();
-    toast(`Installed randcrw ${info.manifest?.version}.${info.active ? "" : " Set it active to use it."}`, "ok");
+    toast(`Installed ReRAC ${info.manifest?.version}.${info.active ? "" : " Set it active to use it."}`, "ok");
   }
 
   async function activate(vref: VersionRef) {
@@ -313,7 +313,7 @@ function Development() {
       setSnapshot(s);
       bumpStatus();
       await reload();
-      if (v.managed) toast(`Deleted randcrw ${v.manifest?.version ?? v.ref.id}.`, "info");
+      if (v.managed) toast(`Deleted ReRAC ${v.manifest?.version ?? v.ref.id}.`, "info");
     }
   }
 
@@ -327,7 +327,7 @@ function Development() {
             <h3>Local builds</h3>
             <p className="muted">
               Install a build <code>.zip</code> (it is unpacked into the data folder), or add a build folder that contains{" "}
-              <code>randcrw-manifest.json</code> (used in place). The launcher checks the manifest, finds the runtime and
+              <code>rerac-manifest.json</code> (used in place). The launcher checks the manifest, finds the runtime and
               extractor, and asks the runtime for <code>--version-json</code>.
             </p>
           </div>
@@ -359,7 +359,7 @@ function Development() {
               <li key={v.ref.id} className={`dev-row plate ${isActive ? "is-active" : ""} ${problem ? "is-bad" : ""}`}>
                 <div className="dev-main">
                   <div className="dev-title">
-                    <span>{info.manifest ? `randcrw ${info.manifest.version}` : "Unknown build"}</span>
+                    <span>{info.manifest ? `ReRAC ${info.manifest.version}` : "Unknown build"}</span>
                     {info.manifest && <span className="badge">{info.manifest.game.toUpperCase()}</span>}
                     {v.managed && <span className="badge">Installed</span>}
                     {isActive && <ActiveBadge />}
@@ -412,7 +412,7 @@ function Development() {
       )}
       {confirmDelete && (
         <Modal
-          title={`Delete randcrw ${confirmDelete.manifest?.version ?? confirmDelete.ref.id}?`}
+          title={`Delete ReRAC ${confirmDelete.manifest?.version ?? confirmDelete.ref.id}?`}
           confirmLabel="Delete"
           danger
           onConfirm={() => void remove(confirmDelete)}

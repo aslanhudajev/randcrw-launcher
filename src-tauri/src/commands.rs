@@ -39,7 +39,7 @@ impl Launcher {
         let root = paths::resolve_data_root(&default_root, env_root);
         let layout = Layout::new(root);
         if let Err(e) = layout.ensure() {
-            eprintln!("[randcrw-launcher] cannot create {}: {e}", layout.root.display());
+            eprintln!("[rerac-launcher] cannot create {}: {e}", layout.root.display());
         }
         let settings = Settings::load(&layout.settings_file());
         Launcher {
@@ -54,6 +54,24 @@ impl Launcher {
 
     fn layout(&self) -> Layout {
         self.layout.read().unwrap().clone()
+    }
+
+    /// Appends one timestamped line to `<logs>/launcher.log`.
+    pub fn log_note(&self, note: &str) {
+        use std::io::Write;
+        let unix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let path = self.layout().logs_dir().join("launcher.log");
+        let written = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .and_then(|mut f| writeln!(f, "[{unix}] {note}"));
+        if let Err(e) = written {
+            eprintln!("[rerac-launcher] cannot write {}: {e}", path.display());
+        }
     }
 
     fn settings(&self) -> Settings {
@@ -269,14 +287,14 @@ fn last_export_dir(st: &Launcher, layout: &Layout, game: &str) -> PathBuf {
 }
 
 /// Where an export into the picked folder goes: the folder itself when it is empty or holds an
-/// earlier export (`export-info.json`), else a `randcrw-<game>-exports` folder inside it, so
+/// earlier export (`export-info.json`), else a `rerac-<game>-exports` folder inside it, so
 /// thousands of files never land loose in e.g. the Desktop.
 pub fn export_dir_for(picked: &Path, game: &str) -> PathBuf {
     let empty = std::fs::read_dir(picked).map(|mut d| d.next().is_none()).unwrap_or(true);
     if empty || picked.join("export-info.json").is_file() || picked.file_name().is_some_and(|n| n == "exports") {
         picked.to_path_buf()
     } else {
-        picked.join(format!("randcrw-{game}-exports"))
+        picked.join(format!("rerac-{game}-exports"))
     }
 }
 
@@ -290,7 +308,7 @@ pub fn export_target(game: String, picked: String) -> CmdResult<String> {
     Ok(export_dir_for(&p, &game).to_string_lossy().into_owned())
 }
 
-/// Runs `randcrw-extract export` on the installed data into `to` (from `export_target`).
+/// Runs `rerac-extract export` on the installed data into `to` (from `export_target`).
 #[tauri::command]
 pub fn start_export(app: AppHandle, st: State<'_, Launcher>, game: String, to: String, what: Vec<String>) -> CmdResult<u64> {
     let mut spec = job_spec(&st, &game, JobKind::Export, None)?;
@@ -328,7 +346,7 @@ pub fn uninstall_game(st: State<'_, Launcher>, game: String) -> CmdResult<()> {
     Ok(())
 }
 
-/// Starts `<active version>/randcrw --data-dir <games/<game>/data>`. The page shows the running
+/// Starts `<active version>/rerac --data-dir <games/<game>/data>`. The page shows the running
 /// state from the snapshot and gets `game://exited` (code, `error:` line, log path) at the end.
 #[tauri::command]
 pub fn launch_game(app: AppHandle, st: State<'_, Launcher>, game: String) -> CmdResult<()> {
@@ -435,8 +453,8 @@ pub async fn pick_folder(app: AppHandle, title: String) -> CmdResult<Option<Stri
     }
 }
 
-/// Moves the data root into `<target>/randcrw` (or `target` itself if it is already named
-/// randcrw or is the default root).
+/// Moves the data root into `<target>/rerac` (or `target` itself if it is already named
+/// rerac or is the default root).
 #[tauri::command]
 pub fn move_data_root(app: AppHandle, st: State<'_, Launcher>, target: String) -> CmdResult<AppSnapshot> {
     if st.jobs.is_busy() || st.game.running().is_some() {
@@ -512,8 +530,8 @@ pub async fn pick_zip(app: AppHandle) -> CmdResult<Option<String>> {
     let picked = app
         .dialog()
         .file()
-        .set_title("Choose a randcrw build (.zip)")
-        .add_filter("randcrw build (.zip)", &["zip", "ZIP"])
+        .set_title("Choose a ReRAC build (.zip)")
+        .add_filter("ReRAC build (.zip)", &["zip", "ZIP"])
         .blocking_pick_file();
     match picked {
         None => Ok(None),
@@ -685,6 +703,27 @@ pub async fn download_official(app: AppHandle, st: State<'_, Launcher>, version:
     Ok(installed_info(&st, installed))
 }
 
+/// Runs the one-time copy of the pre-rename data root (`paths::migrate_legacy_root`) and returns
+/// a note for the launcher log when it copied.
+pub fn migrate_legacy_root(default_root: &Path) -> Option<String> {
+    match paths::migrate_legacy_root(default_root) {
+        Ok(Some(old)) => {
+            let note = format!(
+                "Copied the data folder from before the rename, {}, to {}. The old folder was left as it was.",
+                old.display(),
+                default_root.display()
+            );
+            eprintln!("[rerac-launcher] {note}");
+            Some(note)
+        }
+        Ok(None) => None,
+        Err(e) => {
+            eprintln!("[rerac-launcher] copying the old data folder to {} failed: {e}", default_root.display());
+            None
+        }
+    }
+}
+
 pub fn default_root_or_fallback(app: &AppHandle) -> PathBuf {
     paths::default_data_root()
         .or_else(|| app.path().local_data_dir().ok().map(|d| d.join(paths::APP_DIR_NAME)))
@@ -705,7 +744,7 @@ mod tests {
         let busy = t.0.join("Desktop");
         std::fs::create_dir_all(&busy).unwrap();
         std::fs::write(busy.join("notes.txt"), "x").unwrap();
-        assert_eq!(export_dir_for(&busy, "rac1"), busy.join("randcrw-rac1-exports"));
+        assert_eq!(export_dir_for(&busy, "rac1"), busy.join("rerac-rac1-exports"));
         std::fs::write(busy.join("export-info.json"), "{}").unwrap();
         assert_eq!(export_dir_for(&busy, "rac1"), busy, "an earlier export is refreshed in place");
         assert_eq!(export_dir_for(&t.0.join("missing"), "rac1"), t.0.join("missing"));

@@ -16,7 +16,7 @@ export function ComingLater({ game }: { game: GameDef }) {
           <span className="coming-kicker">{game.subtitle}</span>
           <strong>Coming later</strong>
           <p>
-            randcrw is rebuilding the first game from the ground up. {game.title} support follows once Ratchet & Clank
+            ReRAC is rebuilding the first game from the ground up. {game.title} support follows once Ratchet & Clank
             is complete.
           </p>
         </div>

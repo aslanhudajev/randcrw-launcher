@@ -11,15 +11,20 @@
 //!
 //! The default root is per OS (`default_data_root_for`). When the user moves it, a small
 //! `location.json` pointer is left in the default root so the launcher can find it again.
-//! `RANDCRW_DATA_ROOT` overrides both (development and tests).
+//! `RERAC_DATA_ROOT` overrides both (development and tests).
+//!
+//! Before the rename to ReRAC the default root was named `randcrw`. On start, if the new default
+//! root is missing and the old one exists, the old one is copied once (`migrate_legacy_root`).
 
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub const APP_DIR_NAME: &str = "randcrw";
-pub const ROOT_ENV: &str = "RANDCRW_DATA_ROOT";
+pub const APP_DIR_NAME: &str = "rerac";
+/// The default root's name before the rename. Read once for the copy, never written.
+pub const LEGACY_APP_DIR_NAME: &str = "randcrw";
+pub const ROOT_ENV: &str = "RERAC_DATA_ROOT";
 pub const LOCATION_FILE: &str = "location.json";
 /// Top-level entries the launcher owns and moves with the root.
 pub const MANAGED_ENTRIES: [&str; 4] = ["versions", "games", "logs", "settings"];
@@ -38,6 +43,31 @@ pub fn default_data_root_for(os: &str, env: &dyn Fn(&str) -> Option<String>) -> 
 
 pub fn default_data_root() -> Option<PathBuf> {
     default_data_root_for(std::env::consts::OS, &|k| std::env::var(k).ok())
+}
+
+/// Copies the pre-rename default root (`randcrw`, next to `default_root`) to `default_root` when
+/// `default_root` does not exist yet. The old folder is never modified or deleted. The copy goes
+/// to a sibling `<name>.migrating` folder first and is renamed into place only when complete, so
+/// an interrupted copy is redone on the next start. Returns the old folder when it was copied.
+///
+/// A `location.json` pointer in the old root is copied too, so a moved data root stays in use.
+pub fn migrate_legacy_root(default_root: &Path) -> io::Result<Option<PathBuf>> {
+    let (Some(parent), Some(name)) = (default_root.parent(), default_root.file_name()) else {
+        return Ok(None);
+    };
+    let legacy = parent.join(LEGACY_APP_DIR_NAME);
+    if default_root.exists() || !legacy.is_dir() || paths_equal(&legacy, default_root) {
+        return Ok(None);
+    }
+    let mut staging_name = name.to_os_string();
+    staging_name.push(".migrating");
+    let staging = parent.join(staging_name);
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+    copy_dir_all(&legacy, &staging)?;
+    fs::rename(&staging, default_root)?;
+    Ok(Some(legacy))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -225,7 +255,7 @@ pub(crate) mod tests {
         pub fn new(tag: &str) -> TempDir {
             static N: AtomicU32 = AtomicU32::new(0);
             let p = std::env::temp_dir().join(format!(
-                "randcrw-launcher-test-{tag}-{}-{}",
+                "rerac-launcher-test-{tag}-{}-{}",
                 std::process::id(),
                 N.fetch_add(1, Ordering::SeqCst)
             ));
@@ -248,17 +278,17 @@ pub(crate) mod tests {
     #[test]
     fn default_roots_per_os() {
         let mac = default_data_root_for("macos", &env_of(&[("HOME", "/Users/a")])).unwrap();
-        assert_eq!(mac, PathBuf::from("/Users/a/Library/Application Support/randcrw"));
+        assert_eq!(mac, PathBuf::from("/Users/a/Library/Application Support/rerac"));
 
         let win = default_data_root_for("windows", &env_of(&[("LOCALAPPDATA", "C:/Users/a/AppData/Local")])).unwrap();
-        assert_eq!(win, PathBuf::from("C:/Users/a/AppData/Local").join("randcrw"));
+        assert_eq!(win, PathBuf::from("C:/Users/a/AppData/Local").join("rerac"));
         let win2 = default_data_root_for("windows", &env_of(&[("USERPROFILE", "C:/Users/a")])).unwrap();
-        assert_eq!(win2, PathBuf::from("C:/Users/a").join("AppData").join("Local").join("randcrw"));
+        assert_eq!(win2, PathBuf::from("C:/Users/a").join("AppData").join("Local").join("rerac"));
 
         let xdg = default_data_root_for("linux", &env_of(&[("XDG_DATA_HOME", "/d"), ("HOME", "/h")])).unwrap();
-        assert_eq!(xdg, PathBuf::from("/d/randcrw"));
+        assert_eq!(xdg, PathBuf::from("/d/rerac"));
         let lin = default_data_root_for("linux", &env_of(&[("XDG_DATA_HOME", ""), ("HOME", "/h")])).unwrap();
-        assert_eq!(lin, PathBuf::from("/h/.local/share/randcrw"));
+        assert_eq!(lin, PathBuf::from("/h/.local/share/rerac"));
 
         assert_eq!(default_data_root_for("linux", &env_of(&[])), None);
     }
@@ -271,7 +301,6 @@ pub(crate) mod tests {
         assert_eq!(l.game_data_dir("rac1"), PathBuf::from("/r/games/rac1/data"));
         assert_eq!(l.logs_dir(), PathBuf::from("/r/logs"));
         assert_eq!(l.settings_file(), PathBuf::from("/r/settings/launcher.json"));
-        assert!(!l.root.to_string_lossy().contains("randcre"));
     }
 
     #[test]
@@ -298,7 +327,7 @@ pub(crate) mod tests {
         fs::write(layout.game_data_dir("rac1").join("a.bin"), b"abc").unwrap();
         fs::write(layout.settings_file(), "{}").unwrap();
 
-        let dest = t.0.join("elsewhere").join("randcrw");
+        let dest = t.0.join("elsewhere").join("rerac");
         move_data_root(&def, &def, &dest).unwrap();
         assert_eq!(fs::read(dest.join("games/rac1/data/a.bin")).unwrap(), b"abc");
         assert!(dest.join("settings/launcher.json").exists());
@@ -323,6 +352,40 @@ pub(crate) mod tests {
         assert!(matches!(move_data_root(&def, &def, &busy), Err(MoveError::NotEmpty(_))));
         // Nothing moved.
         assert!(def.join("settings").exists());
+    }
+
+    #[test]
+    fn legacy_root_is_copied_once_and_left_alone() {
+        let t = TempDir::new("migrate");
+        let legacy = t.0.join(LEGACY_APP_DIR_NAME);
+        let new = t.0.join(APP_DIR_NAME);
+        fs::create_dir_all(legacy.join("games/rac1/data")).unwrap();
+        fs::write(legacy.join("games/rac1/data/a.bin"), b"abc").unwrap();
+        fs::create_dir_all(legacy.join("settings")).unwrap();
+        fs::write(legacy.join("settings/launcher.json"), "{}").unwrap();
+        // A leftover from an interrupted copy is replaced.
+        fs::create_dir_all(t.0.join("rerac.migrating/junk")).unwrap();
+
+        assert_eq!(migrate_legacy_root(&new).unwrap(), Some(legacy.clone()));
+        assert_eq!(fs::read(new.join("games/rac1/data/a.bin")).unwrap(), b"abc");
+        assert!(new.join("settings/launcher.json").exists());
+        assert!(!new.join("junk").exists());
+        assert!(!t.0.join("rerac.migrating").exists());
+        // The old folder is untouched.
+        assert_eq!(fs::read(legacy.join("games/rac1/data/a.bin")).unwrap(), b"abc");
+
+        // Once the new root exists, nothing is copied again.
+        fs::write(legacy.join("games/rac1/data/b.bin"), b"new").unwrap();
+        assert_eq!(migrate_legacy_root(&new).unwrap(), None);
+        assert!(!new.join("games/rac1/data/b.bin").exists());
+    }
+
+    #[test]
+    fn no_legacy_root_no_copy() {
+        let t = TempDir::new("migrate-none");
+        let new = t.0.join(APP_DIR_NAME);
+        assert_eq!(migrate_legacy_root(&new).unwrap(), None);
+        assert!(!new.exists());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 {
-  "name": "randcrw-mock-tools",
+  "name": "rerac-mock-tools",
   "private": true,
   "type": "commonjs",
-  "description": "Mock randcrw extractor and runtime that speak the launcher contract (docs/contract.md)."
+  "description": "Mock ReRAC extractor and runtime that speak the launcher contract (docs/contract.md)."
 }

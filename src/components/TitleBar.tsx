@@ -1,5 +1,6 @@
 import { useLauncher } from "../state";
-import { BoltMark, IconClose, IconMinus, IconSquare } from "./Icons";
+import logo from "../assets/brand/rerac-logo-480.png";
+import { IconClose, IconMinus, IconSquare } from "./Icons";
 
 export function TitleBar() {
   const { snapshot, backend } = useLauncher();
@@ -16,9 +17,9 @@ export function TitleBar() {
         </span>
       )}
       <div className="tb-brand" data-tauri-drag-region>
-        <BoltMark size={22} />
+        <img className="tb-logo" src={logo} alt="ReRAC" draggable={false} data-tauri-drag-region />
         <span className="tb-name" data-tauri-drag-region>
-          Ratchet &amp; Clank: <b>ReWrite</b>
+          Launcher
         </span>
       </div>
       <div className="tb-spacer" data-tauri-drag-region />

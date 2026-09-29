@@ -30,7 +30,7 @@ const TABLE: Record<number, FriendlyError> = {
   },
   20: {
     title: "This doesn't look like Ratchet & Clank.",
-    hint: "randcrw needs a disc image of your own copy of Ratchet & Clank for PlayStation 2.",
+    hint: "ReRAC needs a disc image of your own copy of Ratchet & Clank for PlayStation 2.",
     pickAnother: true,
   },
   21: {
@@ -67,20 +67,20 @@ export function friendlyRuntimeError(code: number): FriendlyError & { reextract:
     case 3:
       return {
         title: "The game data is missing or incomplete.",
-        hint: "randcrw couldn't find a complete extraction in the data folder. Re-extract from your disc image.",
+        hint: "ReRAC couldn't find a complete extraction in the data folder. Re-extract from your disc image.",
         pickAnother: false,
         reextract: true,
       };
     case 4:
       return {
-        title: "The game data doesn't match this randcrw version.",
+        title: "The game data doesn't match this ReRAC version.",
         hint: "This build expects a different data format. Re-extract from your disc image to update it.",
         pickAnother: false,
         reextract: true,
       };
     case 2:
       return {
-        title: "randcrw couldn't start.",
+        title: "ReRAC couldn't start.",
         hint: "The launcher passed the game an option it didn't accept. Update the launcher and the game, or report it with the log.",
         pickAnother: false,
         reextract: false,
@@ -88,13 +88,13 @@ export function friendlyRuntimeError(code: number): FriendlyError & { reextract:
     case -1:
       return {
         title: "The game was stopped.",
-        hint: "randcrw was ended by the system. If you didn't close it yourself, the log may show why.",
+        hint: "ReRAC was ended by the system. If you didn't close it yourself, the log may show why.",
         pickAnother: false,
         reextract: false,
       };
     default:
       return {
-        title: "randcrw crashed.",
+        title: "ReRAC crashed.",
         hint: "The game stopped unexpectedly. The log has the details; please attach it when you report the problem.",
         pickAnother: false,
         reextract: false,
@@ -107,7 +107,7 @@ export function friendlyError(code: number, disc?: DiscView | null, message?: st
   if (code === 21 && disc?.game && SEQUELS[disc.game]) {
     return {
       title: `That's ${SEQUELS[disc.game]} — not supported yet.`,
-      hint: "randcrw rewrites the first Ratchet & Clank for now. The sequels come later.",
+      hint: "ReRAC rewrites the first Ratchet & Clank for now. The sequels come later.",
       pickAnother: true,
     };
   }
@@ -124,13 +124,13 @@ export function friendlyError(code: number, disc?: DiscView | null, message?: st
   if (code === 99 && message?.startsWith("usage:")) {
     return {
       ...base,
-      hint: "The launcher and this randcrw build disagree about the extractor's options. Update both, or report it with the log.",
+      hint: "The launcher and this ReRAC build disagree about the extractor's options. Update both, or report it with the log.",
     };
   }
   return base;
 }
 
-/** Export failures (`randcrw-extract export`, game-side clarification 18). The installed data is never changed by an
+/** Export failures (`rerac-extract export`, game-side clarification 18). The installed data is never changed by an
  * export, so the actions are only "try again" (another folder) and the log. */
 export function friendlyExportError(code: number, message?: string): FriendlyError {
   switch (code) {
@@ -161,7 +161,7 @@ export function friendlyExportError(code: number, message?: string): FriendlyErr
     default:
       return code === 99 && message?.startsWith("usage:")
         ? {
-            title: "This randcrw build can't export assets.",
+            title: "This ReRAC build can't export assets.",
             hint: "The active version's extractor doesn't know the export command. Update it under Version Management.",
             pickAnother: false,
           }

@@ -1,14 +1,14 @@
 [package]
-name = "randcrw-launcher"
+name = "rerac-launcher"
 version = "0.1.0"
-description = "Launcher for randcrw (Ratchet & Clank: ReWrite): installs game data from your own disc image and starts the game"
-authors = ["randcrw contributors"]
+description = "Launcher for ReRAC: installs game data from your own disc image and starts the game"
+authors = ["ReRAC contributors"]
 edition = "2021"
 rust-version = "1.77"
 
 [lib]
 # The `_lib` suffix keeps the lib name distinct from the bin name (cargo#8519 on Windows).
-name = "randcrw_launcher_lib"
+name = "rerac_launcher_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

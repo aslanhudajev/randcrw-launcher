@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// Mock randcrw-extract: speaks launcher contract v0 (docs/contract.md), including the game
+// Mock rerac-extract: speaks launcher contract v0 (docs/contract.md), including the game
 // side's clarifications: one terminal done/error line, disc extras (game/title/elf_sha1),
 // extract = identify + copy (hashed while copying), .partial files, extract-info.json last.
 //
 // Choosing an outcome:
-//   RANDCRW_MOCK_ERROR=<code>     fail with that contract code at the stage it belongs to
+//   RERAC_MOCK_ERROR=<code>     fail with that contract code at the stage it belongs to
 //   ISO file name containing errNN (e.g. "rac1-err31.iso") does the same
 //   "pal"/"europe" -> 21 (RC1 PAL), "rac2"/"commando" -> 21 (sequel), "rac3"/"arsenal",
 //   "deadlocked" likewise, "notrac" -> 20 (another PS2 game), ".bin" -> 11
-//   RANDCRW_MOCK_SECONDS=<n>      length of the copy stage (default 5; the real one takes 3-8 s)
-//   RANDCRW_MOCK_VERIFY_FAIL=1    or a ".mock-corrupt" file in the data dir -> verify fails (40)
-//   export: writes a few placeholder files and export-info.json into --to; RANDCRW_MOCK_ERROR=30|31 fails it
+//   RERAC_MOCK_SECONDS=<n>      length of the copy stage (default 5; the real one takes 3-8 s)
+//   RERAC_MOCK_VERIFY_FAIL=1    or a ".mock-corrupt" file in the data dir -> verify fails (40)
+//   export: writes a few placeholder files and export-info.json into --to; RERAC_MOCK_ERROR=30|31 fails it
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -64,7 +64,7 @@ function fail(code, message) {
 }
 function outcome(iso) {
   const name = path.basename(iso || "").toLowerCase();
-  const forced = process.env.RANDCRW_MOCK_ERROR || (name.match(/err(\d\d)/) || [])[1];
+  const forced = process.env.RERAC_MOCK_ERROR || (name.match(/err(\d\d)/) || [])[1];
   if (forced) return { err: Number(forced), disc: Number(forced) === 21 ? DISCS.pal : Number(forced) === 20 ? DISCS.other : DISCS.ok };
   if (name.endsWith(".bin")) return { err: 11 };
   if (name.includes("notrac")) return { err: 20, disc: DISCS.other };
@@ -76,7 +76,7 @@ function outcome(iso) {
 }
 
 async function identify(iso, o) {
-  if (!iso) fail(99, "usage: randcrw-extract extract --iso <path> --out <dir> [--ntsc-only] [--json]");
+  if (!iso) fail(99, "usage: rerac-extract extract --iso <path> --out <dir> [--ntsc-only] [--json]");
   if (!fs.existsSync(iso)) fail(10, `cannot open ${iso}: no such file`);
   if (o.err === 10 || o.err === 11) fail(o.err);
   for (let i = 1; i <= 4; i++) {
@@ -95,7 +95,7 @@ async function extract() {
   const out = arg("--out");
   const ntscOnly = process.argv.includes("--ntsc-only");
   const o = outcome(iso);
-  if (!out) fail(99, "usage: randcrw-extract extract --iso <path> --out <dir> [--ntsc-only] [--json]");
+  if (!out) fail(99, "usage: rerac-extract extract --iso <path> --out <dir> [--ntsc-only] [--json]");
   await identify(iso, o);
   fs.mkdirSync(out, { recursive: true });
   fs.rmSync(path.join(out, "extract-info.json"), { force: true });
@@ -103,7 +103,7 @@ async function extract() {
   emit({ type: "info", message: `extracting to ${out}` });
   const files = FILES.filter(([f]) => !(ntscOnly && PAL_ONLY(f)));
   const total = files.reduce((a, [, s]) => a + s, 0);
-  const seconds = Number(process.env.RANDCRW_MOCK_SECONDS || 5);
+  const seconds = Number(process.env.RERAC_MOCK_SECONDS || 5);
   const frameMs = 100; // the real extractor rate-limits to about 10 lines a second
   const frames = Math.max(1, Math.round((seconds * 1000) / frameMs));
   let written = 0;
@@ -143,20 +143,20 @@ function walk(dir) {
 
 async function verify() {
   const out = arg("--out");
-  if (!out) fail(99, "usage: randcrw-extract verify --out <dir> [--json]");
+  if (!out) fail(99, "usage: rerac-extract verify --out <dir> [--json]");
   const infoPath = path.join(out, "extract-info.json");
   if (!fs.existsSync(infoPath)) fail(40, "extract-info.json is missing or unreadable");
   const info = JSON.parse(fs.readFileSync(infoPath, "utf8"));
   const files = FILES.filter(([f]) => !(info.ntsc_only && PAL_ONLY(f)));
   const total = files.reduce((a, [, s]) => a + s, 0);
-  const corrupt = process.env.RANDCRW_MOCK_VERIFY_FAIL === "1" || fs.existsSync(path.join(out, ".mock-corrupt"));
+  const corrupt = process.env.RERAC_MOCK_VERIFY_FAIL === "1" || fs.existsSync(path.join(out, ".mock-corrupt"));
   const frames = 20;
   for (let fr = 1; fr <= frames; fr++) {
     const done = Math.round((total * fr) / frames);
     emit({ type: "progress", stage: "verify", done, total, file: files[Math.min(files.length - 1, Math.floor((files.length * fr) / frames))][0] });
     await sleep(100);
   }
-  if (corrupt || process.env.RANDCRW_MOCK_ERROR === "40") fail(40);
+  if (corrupt || process.env.RERAC_MOCK_ERROR === "40") fail(40);
   emit({ type: "done", elapsed_ms: Date.now() - t0 });
 }
 
@@ -164,17 +164,17 @@ async function exportCmd() {
   const out = arg("--out");
   const to = arg("--to") || (out && path.join(out, "exports"));
   const what = (arg("--what") || "all").split(",");
-  if (!out) fail(99, "usage: randcrw-extract export --out <data dir> [--to <dir>] [--what <kinds>] [--level NN] [--json]");
-  if (!fs.existsSync(path.join(out, "extract-info.json")) && !fs.existsSync(path.join(out, "toc.bin"))) fail(10, `${out} is not a randcrw data folder (no toc.bin); extract the disc first`);
+  if (!out) fail(99, "usage: rerac-extract export --out <data dir> [--to <dir>] [--what <kinds>] [--level NN] [--json]");
+  if (!fs.existsSync(path.join(out, "extract-info.json")) && !fs.existsSync(path.join(out, "toc.bin"))) fail(10, `${out} is not a ReRAC data folder (no toc.bin); extract the disc first`);
   fs.mkdirSync(to, { recursive: true });
   fs.rmSync(path.join(to, "export-info.json"), { force: true });
   emit({ type: "info", message: `exporting ${what.join(", ")} for 19 level(s) to ${to}` });
   const total = 1_214_000_000;
-  const frames = Math.max(1, Math.round((Number(process.env.RANDCRW_MOCK_SECONDS || 3) * 1000) / 100));
+  const frames = Math.max(1, Math.round((Number(process.env.RERAC_MOCK_SECONDS || 3) * 1000) / 100));
   for (let fr = 0; fr <= frames; fr++) {
     const lvl = String(Math.min(18, Math.floor((19 * fr) / frames))).padStart(2, "0");
     emit({ type: "progress", stage: "export", done: Math.round((total * fr) / frames), total, file: `levels/${lvl}/core_data.bin` });
-    const code = Number(process.env.RANDCRW_MOCK_ERROR || 0);
+    const code = Number(process.env.RERAC_MOCK_ERROR || 0);
     if ((code === 30 || code === 31) && fr > frames * 0.4) fail(code);
     await sleep(100);
   }
@@ -186,8 +186,8 @@ async function exportCmd() {
 async function main() {
   const cmd = process.argv[2];
   if (cmd === "--help" || cmd === "help") {
-    console.log("usage: randcrw-extract identify|extract|verify|export [--iso <path>] [--out <dir>] [--to <dir>] [--what <kinds>] [--ntsc-only] [--threads <n>] [--json]");
-  } else if (cmd === "--version") console.log(`randcrw-extract ${VERSION}`);
+    console.log("usage: rerac-extract identify|extract|verify|export [--iso <path>] [--out <dir>] [--to <dir>] [--what <kinds>] [--ntsc-only] [--threads <n>] [--json]");
+  } else if (cmd === "--version") console.log(`rerac-extract ${VERSION}`);
   else if (cmd === "identify") {
     const iso = arg("--iso") || process.env.RC_ISO;
     await identify(iso, outcome(iso));
@@ -195,6 +195,6 @@ async function main() {
   } else if (cmd === "extract") await extract();
   else if (cmd === "verify") await verify();
   else if (cmd === "export") await exportCmd();
-  else fail(99, "usage: randcrw-extract identify|extract|verify|export ... --json");
+  else fail(99, "usage: rerac-extract identify|extract|verify|export ... --json");
 }
 main().catch((e) => fail(99, String(e)));

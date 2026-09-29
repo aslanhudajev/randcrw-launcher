@@ -1,4 +1,4 @@
-//! Runs `randcrw-extract` (contract §Extractor CLI) as a cancellable background job.
+//! Runs `rerac-extract` (contract §Extractor CLI) as a cancellable background job.
 //!
 //! stdout is read as JSON lines and forwarded to the page as `extractor://event`; the end of
 //! the job is `extractor://finished`. Extraction writes into `games/<game>/data.staging/` and is
@@ -587,7 +587,7 @@ echo '{"type":"done","elapsed_ms":1}'
         let v = crate::versions::resolve_dir(vref, mock.clone()).unwrap();
 
         let t = TempDir::new("mock");
-        std::env::set_var("RANDCRW_MOCK_SECONDS", "0.2");
+        std::env::set_var("RERAC_MOCK_SECONDS", "0.2");
         let iso = t.0.join("Ratchet & Clank (USA).iso");
         fs::write(&iso, "").unwrap();
         let mut s = spec(&t, v.extractor.clone(), JobKind::Extract);
@@ -612,7 +612,7 @@ echo '{"type":"done","elapsed_ms":1}'
         assert_eq!(fin.status, FinishStatus::Ok, "{}", fin.message);
 
         let out = crate::launch::command(&v.runtime, &mock, &data)
-            .env("RANDCRW_MOCK_RUN_SECONDS", "0")
+            .env("RERAC_MOCK_RUN_SECONDS", "0")
             .output()
             .unwrap();
         assert!(out.status.success());
@@ -620,13 +620,13 @@ echo '{"type":"done","elapsed_ms":1}'
     }
 
     /// Against the real game-side extractor and disc. Opt-in:
-    /// `RANDCRW_REAL_EXTRACT=<randcrw-extract> RANDCRW_REAL_ISO=<disc.iso> cargo test -- --ignored real_`
+    /// `RERAC_REAL_EXTRACT=<rerac-extract> RERAC_REAL_ISO=<disc.iso> cargo test -- --ignored real_`
     /// Writes about 4 GiB into the system temp dir and deletes it afterwards.
     #[test]
     #[ignore]
     fn real_extractor_end_to_end() {
-        let (Ok(bin), Ok(iso)) = (std::env::var("RANDCRW_REAL_EXTRACT"), std::env::var("RANDCRW_REAL_ISO")) else {
-            eprintln!("RANDCRW_REAL_EXTRACT / RANDCRW_REAL_ISO not set; skipping");
+        let (Ok(bin), Ok(iso)) = (std::env::var("RERAC_REAL_EXTRACT"), std::env::var("RERAC_REAL_ISO")) else {
+            eprintln!("RERAC_REAL_EXTRACT / RERAC_REAL_ISO not set; skipping");
             return;
         };
         let t = TempDir::new("real");

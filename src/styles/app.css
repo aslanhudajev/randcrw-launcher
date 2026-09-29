@@ -86,16 +86,19 @@
   align-items: center;
   gap: 9px;
 }
+.tb-logo {
+  display: block;
+  height: 34px;
+  width: auto;
+  filter: drop-shadow(0 1px 1px #000a);
+}
 .tb-name {
   font-family: var(--font-display);
-  font-size: 1.12rem;
-  letter-spacing: 0.02em;
-  color: var(--text);
+  font-size: 0.8rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-2);
   white-space: nowrap;
-}
-.tb-name b {
-  font-weight: 400;
-  color: var(--orange);
 }
 .tb-spacer {
   flex: 1;
@@ -1266,6 +1269,12 @@
 }
 .about p + p {
   margin-top: 6px;
+}
+.about-logo {
+  display: block;
+  width: 220px;
+  height: auto;
+  margin: 2px 0 12px;
 }
 .help .page-body > .card:first-child {
   margin-bottom: 0;

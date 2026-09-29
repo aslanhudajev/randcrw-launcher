@@ -1,18 +1,18 @@
 #!/usr/bin/env node
-// Mock randcrw runtime (contract §Runtime): answers --version-json, checks the data folder like
+// Mock ReRAC runtime (contract §Runtime): answers --version-json, checks the data folder like
 // the real game, and "plays" for a few seconds without opening a window.
-//   RANDCRW_MOCK_RUN_SECONDS=<n>   how long the fake game runs (default 5)
-//   RANDCRW_MOCK_DATA_FORMAT=<n>   data_format this build expects (default 1); a mismatch exits 4
+//   RERAC_MOCK_RUN_SECONDS=<n>   how long the fake game runs (default 5)
+//   RERAC_MOCK_DATA_FORMAT=<n>   data_format this build expects (default 1); a mismatch exits 4
 // Exit codes when it cannot start, each with one "error: ..." line on stderr:
 //   2 --data-dir without a value, 3 missing/incomplete data folder, 4 data_format mismatch
 "use strict";
 const fs = require("fs");
 const path = require("path");
 
-const format = Number(process.env.RANDCRW_MOCK_DATA_FORMAT || 1);
+const format = Number(process.env.RERAC_MOCK_DATA_FORMAT || 1);
 const argv = process.argv.slice(2);
 if (argv.includes("--version-json")) {
-  console.log(JSON.stringify({ name: "randcrw", version: "0.1.0-mock", game: "rac1", data_format: format }));
+  console.log(JSON.stringify({ name: "rerac", version: "0.1.0-mock", game: "rac1", data_format: format }));
   process.exit(0);
 }
 const die = (code, msg) => {
@@ -29,8 +29,8 @@ if (i >= 0) {
   dataDir = eq.slice("--data-dir=".length);
   if (!dataDir) die(2, "--data-dir needs a value");
 } else dataDir = process.env.RC_DATA_DIR;
-console.log(`randcrw mock runtime; data dir: ${dataDir}; RC_DATA_DIR=${process.env.RC_DATA_DIR}`);
-if (!dataDir || !fs.existsSync(path.join(dataDir, "toc.bin"))) die(3, `${dataDir} is not a randcrw data folder (no toc.bin)`);
+console.log(`ReRAC mock runtime; data dir: ${dataDir}; RC_DATA_DIR=${process.env.RC_DATA_DIR}`);
+if (!dataDir || !fs.existsSync(path.join(dataDir, "toc.bin"))) die(3, `${dataDir} is not a ReRAC data folder (no toc.bin)`);
 let info;
 try {
   info = JSON.parse(fs.readFileSync(path.join(dataDir, "extract-info.json"), "utf8"));
@@ -38,7 +38,7 @@ try {
   die(3, `${dataDir} has no extract-info.json: the extraction is incomplete`);
 }
 if (info.data_format !== format) die(4, `data_format ${info.data_format} does not match this build (${format})`);
-const secs = Number(process.env.RANDCRW_MOCK_RUN_SECONDS || 5);
+const secs = Number(process.env.RERAC_MOCK_RUN_SECONDS || 5);
 setTimeout(() => {
   console.log("mock game exited");
   process.exit(0);

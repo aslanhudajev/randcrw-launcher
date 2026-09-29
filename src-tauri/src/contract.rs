@@ -11,13 +11,13 @@ use std::path::{Component, Path};
 /// Manifest schema this launcher understands.
 pub const MANIFEST_SCHEMA: u32 = 1;
 /// File name of the manifest at the root of every version folder.
-pub const MANIFEST_FILE: &str = "randcrw-manifest.json";
+pub const MANIFEST_FILE: &str = "rerac-manifest.json";
 /// File the extractor writes into the game data dir on success.
 pub const EXTRACT_INFO_FILE: &str = "extract-info.json";
 /// Env var equivalent of `--data-dir` for the runtime.
 pub const DATA_DIR_ENV: &str = "RC_DATA_DIR";
 
-/// `randcrw-manifest.json` at the root of `versions/<source>/<version>/`.
+/// `rerac-manifest.json` at the root of `versions/<source>/<version>/`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
     pub schema: u32,
@@ -50,7 +50,7 @@ impl std::fmt::Display for ManifestError {
                 "{MANIFEST_FILE} uses schema {s}; this launcher understands schema {MANIFEST_SCHEMA}. Update the launcher."
             ),
             ManifestError::Name(n) => {
-                write!(f, "{MANIFEST_FILE} is for \"{n}\", not randcrw")
+                write!(f, "{MANIFEST_FILE} is for \"{n}\", not rerac")
             }
             ManifestError::Field(k) => write!(f, "{MANIFEST_FILE}: \"{k}\" is empty"),
             ManifestError::UnsafePath(k, p) => write!(
@@ -72,7 +72,7 @@ impl Manifest {
         if self.schema != MANIFEST_SCHEMA {
             return Err(ManifestError::Schema(self.schema));
         }
-        if self.name != "randcrw" {
+        if self.name != "rerac" {
             return Err(ManifestError::Name(self.name.clone()));
         }
         for (key, value) in [("version", &self.version), ("game", &self.game)] {
@@ -258,14 +258,14 @@ impl RuntimeVersion {
 mod tests {
     use super::*;
 
-    const GOOD: &str = r#"{"schema":1,"name":"randcrw","version":"0.1.0","game":"rac1","runtime":"bin/randcrw","extractor":"bin/randcrw-extract","supported_discs":["SCUS_971.99"],"data_format":1}"#;
+    const GOOD: &str = r#"{"schema":1,"name":"rerac","version":"0.1.0","game":"rac1","runtime":"bin/rerac","extractor":"bin/rerac-extract","supported_discs":["SCUS_971.99"],"data_format":1}"#;
 
     #[test]
     fn manifest_parses_contract_example() {
         let m = Manifest::parse(GOOD).unwrap();
         assert_eq!(m.version, "0.1.0");
         assert_eq!(m.game, "rac1");
-        assert_eq!(m.runtime, "bin/randcrw");
+        assert_eq!(m.runtime, "bin/rerac");
         assert_eq!(m.supported_discs, vec!["SCUS_971.99".to_string()]);
         assert_eq!(m.data_format, 1);
     }
@@ -274,19 +274,19 @@ mod tests {
     fn manifest_rejects_wrong_schema_name_and_paths() {
         let bad_schema = GOOD.replace(r#""schema":1"#, r#""schema":2"#);
         assert_eq!(Manifest::parse(&bad_schema), Err(ManifestError::Schema(2)));
-        let bad_name = GOOD.replace(r#""name":"randcrw""#, r#""name":"other""#);
+        let bad_name = GOOD.replace(r#""name":"rerac""#, r#""name":"other""#);
         assert!(matches!(Manifest::parse(&bad_name), Err(ManifestError::Name(_))));
-        let escape = GOOD.replace("bin/randcrw-extract", "../../evil");
+        let escape = GOOD.replace("bin/rerac-extract", "../../evil");
         assert!(matches!(
             Manifest::parse(&escape),
             Err(ManifestError::UnsafePath("extractor", _))
         ));
-        let abs = GOOD.replace("bin/randcrw\"", "/usr/bin/randcrw\"");
+        let abs = GOOD.replace("bin/rerac\"", "/usr/bin/rerac\"");
         assert!(matches!(
             Manifest::parse(&abs),
             Err(ManifestError::UnsafePath("runtime", _))
         ));
-        let missing = r#"{"schema":1,"name":"randcrw"}"#;
+        let missing = r#"{"schema":1,"name":"rerac"}"#;
         assert!(matches!(Manifest::parse(missing), Err(ManifestError::Json(_))));
     }
 
@@ -395,7 +395,7 @@ mod tests {
         assert_eq!(info.files, 812);
         assert_eq!(info.bytes, 4_000_000_000);
         let rv = RuntimeVersion::parse(
-            "starting up\n{\"name\":\"randcrw\",\"version\":\"0.1.0\",\"game\":\"rac1\",\"data_format\":1}\n",
+            "starting up\n{\"name\":\"rerac\",\"version\":\"0.1.0\",\"game\":\"rac1\",\"data_format\":1}\n",
         )
         .unwrap();
         assert_eq!(rv.version, "0.1.0");

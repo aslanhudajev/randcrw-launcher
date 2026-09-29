@@ -1,11 +1,21 @@
-# randcrw Launcher
+<p align="center">
+  <img src="src/assets/brand/rerac-logo.png" alt="ReRAC" width="420">
+</p>
 
-The randcrw launcher installs and updates versions of randcrw (Ratchet & Clank: ReWrite), extracts the game data
-from your own disc image, and starts the game. Mod management is planned. It is built with
-[Tauri](https://v2.tauri.app/).
+<h1 align="center">ReRAC Launcher</h1>
+
+<p align="center">
+  <a href="https://re-rac.github.io">Website</a> ·
+  <a href="https://github.com/re-rac/rerac">Game</a> ·
+  <a href="https://github.com/re-rac/rerac-launcher">Launcher</a>
+</p>
+
+The ReRAC launcher installs and updates versions of [ReRAC](https://github.com/re-rac/rerac), a native rewrite of the
+PlayStation 2 game Ratchet & Clank (2002). It extracts the game data from your own disc image and starts the game.
+Mod management is planned. It is built with [Tauri](https://v2.tauri.app/).
 
 > [!WARNING]
-> randcrw is an unofficial fan project, not affiliated with or endorsed by Sony Interactive Entertainment or Insomniac
+> ReRAC is an unofficial fan project, not affiliated with or endorsed by Sony Interactive Entertainment or Insomniac
 > Games. You need your own, legally obtained PlayStation 2 disc of Ratchet & Clank (NTSC-U, SCUS-97199, version 1.00).
 > Neither the launcher nor the game contains any game assets.
 
@@ -41,13 +51,14 @@ made for another version.
 The launcher has no support-package export. Attach your log files to the report instead: Help → **Logs folder**, or
 Settings → Folders → **Open logs**, opens the folder. Every extraction, verification, asset export and game session
 writes its own file there (`extract-rac1-<time>.log`, `verify-rac1-<time>.log`, `export-rac1-<time>.log`,
-`rac1-<time>.log`). The launcher itself writes no log of its own.
+`rac1-<time>.log`). The launcher itself writes only `launcher.log`, for one-off notes such as copying the data
+folder from before the rename to ReRAC (the old `randcrw` folder is copied once to `rerac` and left as it was).
 
 With the default data folder, the logs are in:
 
-- Windows: `C:\Users\<YOUR_USER_NAME>\AppData\Local\randcrw\logs`
-- Linux: `/home/<YOUR_USER_NAME>/.local/share/randcrw/logs` (or `$XDG_DATA_HOME/randcrw/logs` when that is set)
-- macOS: `/Users/<YOUR_USER_NAME>/Library/Application Support/randcrw/logs`
+- Windows: `C:\Users\<YOUR_USER_NAME>\AppData\Local\rerac\logs`
+- Linux: `/home/<YOUR_USER_NAME>/.local/share/rerac/logs` (or `$XDG_DATA_HOME/rerac/logs` when that is set)
+- macOS: `/Users/<YOUR_USER_NAME>/Library/Application Support/rerac/logs`
 
 These folders are hidden by default. If you moved the data folder (Settings → Folders), the logs moved with it into
 `<your data folder>/logs`.
@@ -108,15 +119,15 @@ cd src-tauri && cargo clippy
 To keep a test run away from your real data folder, point the launcher at another one:
 
 ```sh
-RANDCRW_DATA_ROOT=/some/dir npm run tauri dev
+RERAC_DATA_ROOT=/some/dir npm run tauri dev
 ```
 
 ### Running a local build of the game
 
-In the game repository, `cargo xtask package` makes a version folder and a zip,
-`dist/randcrw-<version>-<os>-<arch>.zip`. In the launcher, Settings → Version Management → Development →
+In your local checkout of [re-rac/rerac](https://github.com/re-rac/rerac), `cargo xtask package` makes a version folder and a zip,
+`dist/rerac-<version>-<os>-<arch>.zip`. In the launcher, Settings → Version Management → Development →
 **Install from zip…** installs it into `<data folder>/versions/development/<version>/`; **Add build folder…** with the
-unpacked `dist/randcrw-<version>-<os>-<arch>/` folder uses it in place instead. Then **Set active**. There is no
+unpacked `dist/rerac-<version>-<os>-<arch>/` folder uses it in place instead. Then **Set active**. There is no
 environment variable for this; the Development source is the only way.
 
 The game's own documentation for this is `docs/workflows/launcher.md` in the game repository.
@@ -134,16 +145,19 @@ top of the file.
   scripts that follow the contract. Add it under Settings → Version Management → Development, set it active, and
   install from any `.iso` file. `dev/mock/make-test-isos.sh <dir>` makes empty test images whose file names steer
   the outcome: `(USA)` succeeds, `Europe` or `PAL` gives error 21, `notrac` error 20, `errNN` any code.
-  `RANDCRW_MOCK_ERROR=<code>` forces a code, `RANDCRW_MOCK_SECONDS` sets the copy time,
-  `RANDCRW_MOCK_VERIFY_FAIL=1` fails verification, and `RANDCRW_MOCK_RUN_SECONDS` sets how long the mock game runs.
+  `RERAC_MOCK_ERROR=<code>` forces a code, `RERAC_MOCK_SECONDS` sets the copy time,
+  `RERAC_MOCK_VERIFY_FAIL=1` fails verification, and `RERAC_MOCK_RUN_SECONDS` sets how long the mock game runs.
   These scripts need Node on `PATH` (macOS and Linux).
 - **Real extractor, mock game.** `dev/make-real-extractor-version.sh` makes `dev/real/` (git-ignored) with the game
-  repository's real `randcrw-extract` and the mock runtime. Add that folder under Development instead.
+  repository's real `rerac-extract` and the mock runtime. Add that folder under Development instead. It looks for the
+  game in `$RERAC_GAME_DIR`, your local checkout of re-rac/rerac (default: the sibling folder `../randcre`).
 
 ## Related
 
-- The randcrw game repository (private for now): the game, the extractor, and the packaging that produces the
-  version zips this launcher installs.
+- [re-rac/rerac](https://github.com/re-rac/rerac), the game repository (private for now): the game, the extractor,
+  and the packaging that produces the version zips this launcher installs.
+- [re-rac.github.io](https://re-rac.github.io), the project website.
+- [re-rac/rerac-launcher](https://github.com/re-rac/rerac-launcher), this repository.
 
 ## License
 

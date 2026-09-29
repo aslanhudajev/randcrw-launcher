@@ -6,7 +6,7 @@
 //! 1. unpack into a hidden staging folder `versions/<source>/.install-<pid>-<n>/`, keeping the
 //!    executable bits (and relative symlinks) recorded in the zip;
 //! 2. find the version folder: the staging root, or its single top-level folder (release zips
-//!    wrap everything in `randcrw-<version>-<os>-<arch>/`);
+//!    wrap everything in `rerac-<version>-<os>-<arch>/`);
 //! 3. validate the manifest and both binaries, clear the macOS quarantine flag
 //!    ([`clear_quarantine`]), and ask the runtime for `--version-json`;
 //! 4. rename the folder to `versions/<source>/<id>/`, replacing an older install of the same id.
@@ -128,7 +128,7 @@ pub fn find_version_root(staging: &Path) -> Result<PathBuf, String> {
         .collect();
     match dirs.as_slice() {
         [one] if one.join(MANIFEST_FILE).is_file() => Ok(one.clone()),
-        _ => Err(format!("This archive is not a randcrw build: there is no {MANIFEST_FILE} at its top level.")),
+        _ => Err(format!("This archive is not a ReRAC build: there is no {MANIFEST_FILE} at its top level.")),
     }
 }
 
@@ -148,7 +148,7 @@ fn ensure_executable(p: &Path) -> Result<(), String> {
 ///
 /// Why: a zip downloaded with a browser is quarantined, and unpackers that copy extended
 /// attributes (Finder's Archive Utility, `ditto`) pass the flag on to every file. When a
-/// quarantined, ad-hoc-signed binary like `randcrw` is started, Gatekeeper blocks it ("cannot be
+/// quarantined, ad-hoc-signed binary like `rerac` is started, Gatekeeper blocks it ("cannot be
 /// opened because the developer cannot be verified") and the launcher only sees a failed spawn.
 /// The launcher's own unpacker does not copy extended attributes, but development folders
 /// unpacked in Finder and future unpack paths can carry the flag, so it is cleared explicitly.
@@ -199,7 +199,7 @@ pub fn install_archive(
 ) -> Result<Installed, String> {
     let name = archive.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     if !name.ends_with(".zip") {
-        return Err("Choose a randcrw build .zip file.".into());
+        return Err("Choose a ReRAC build .zip file.".into());
     }
     fs::create_dir_all(source_dir).map_err(|e| format!("Could not create {}: {e}", source_dir.display()))?;
     let staging = staging_dir(source_dir);
@@ -262,8 +262,8 @@ pub(crate) mod tests {
     use crate::paths::tests::TempDir;
     use std::io::Write;
 
-    pub const MANIFEST: &str = r#"{"schema":1,"name":"randcrw","version":"0.1.0","game":"rac1","runtime":"randcrw","extractor":"randcrw-extract","supported_discs":["SCUS_971.99"],"data_format":1}"#;
-    pub const RUNTIME: &str = "#!/bin/sh\n[ \"$1\" = --version-json ] && echo '{\"name\":\"randcrw\",\"version\":\"0.1.0\",\"game\":\"rac1\",\"data_format\":1}'\nexit 0\n";
+    pub const MANIFEST: &str = r#"{"schema":1,"name":"rerac","version":"0.1.0","game":"rac1","runtime":"rerac","extractor":"rerac-extract","supported_discs":["SCUS_971.99"],"data_format":1}"#;
+    pub const RUNTIME: &str = "#!/bin/sh\n[ \"$1\" = --version-json ] && echo '{\"name\":\"rerac\",\"version\":\"0.1.0\",\"game\":\"rac1\",\"data_format\":1}'\nexit 0\n";
 
     /// A zip shaped like the game repo's release: one top folder, AppleDouble files, exec bits.
     pub fn release_zip(path: &Path, top: Option<&str>, runtime_mode: u32) {
@@ -278,11 +278,11 @@ pub(crate) mod tests {
             w.add_directory(format!("{t}/"), file.unix_permissions(0o755)).unwrap();
         }
         for (name, body, mode) in [
-            ("randcrw", RUNTIME, runtime_mode),
-            ("randcrw-extract", "#!/bin/sh\nexit 0\n", 0o755),
-            ("randcrw-manifest.json", MANIFEST, 0o644),
+            ("rerac", RUNTIME, runtime_mode),
+            ("rerac-extract", "#!/bin/sh\nexit 0\n", 0o755),
+            ("rerac-manifest.json", MANIFEST, 0o644),
             ("assets/shaders/tie.wgsl", "// shader", 0o644),
-            ("._randcrw", "apple double", 0o644),
+            ("._rerac", "apple double", 0o644),
         ] {
             w.start_file(p(name), file.unix_permissions(mode)).unwrap();
             w.write_all(body.as_bytes()).unwrap();
@@ -302,18 +302,18 @@ pub(crate) mod tests {
     #[test]
     fn installs_a_release_zip_keeping_exec_bits() {
         let t = TempDir::new("install-zip");
-        let zip_path = t.0.join("randcrw-0.1.0-macos-arm64.zip");
-        release_zip(&zip_path, Some("randcrw-0.1.0-macos-arm64"), 0o755);
+        let zip_path = t.0.join("rerac-0.1.0-macos-arm64.zip");
+        release_zip(&zip_path, Some("rerac-0.1.0-macos-arm64"), 0o755);
         let src = t.0.join("root/versions/development");
         let got = install_archive(&zip_path, SourceId::Development, &src, None, &["rac1"]).unwrap();
         assert_eq!(got.vref, VersionRef { source: SourceId::Development, id: "0.1.0".into() });
         assert_eq!(got.dir, src.join("0.1.0"));
         assert_eq!(got.runtime.version, "0.1.0");
         assert!(!got.replaced);
-        assert_eq!(mode(&got.dir.join("randcrw")), 0o755);
-        assert_eq!(mode(&got.dir.join("randcrw-extract")), 0o755);
+        assert_eq!(mode(&got.dir.join("rerac")), 0o755);
+        assert_eq!(mode(&got.dir.join("rerac-extract")), 0o755);
         assert!(got.dir.join("assets/shaders/tie.wgsl").is_file());
-        assert!(!got.dir.join("._randcrw").exists());
+        assert!(!got.dir.join("._rerac").exists());
         // Only the version folder is left: no staging, no __MACOSX.
         let names: Vec<_> = fs::read_dir(&src).unwrap().flatten().map(|e| e.file_name()).collect();
         assert_eq!(names, ["0.1.0"]);
@@ -332,7 +332,7 @@ pub(crate) mod tests {
         let src = t.0.join("versions/official");
         let got = install_archive(&zip_path, SourceId::Official, &src, Some("v0.1.0"), &["rac1"]).unwrap();
         assert_eq!(got.dir, src.join("v0.1.0"));
-        assert_eq!(mode(&got.dir.join("randcrw")) & 0o111, 0o111);
+        assert_eq!(mode(&got.dir.join("rerac")) & 0o111, 0o111);
     }
 
     /// The Official path: a "downloaded" asset (a local zip standing in for the GitHub download)
@@ -344,11 +344,11 @@ pub(crate) mod tests {
         let official = t.0.join("root/versions/official");
         let dl = downloads_dir(&official);
         fs::create_dir_all(&dl).unwrap();
-        let file = dl.join("randcrw-0.1.0-macos-arm64.zip");
-        release_zip(&file, Some("randcrw-0.1.0-macos-arm64"), 0o755);
+        let file = dl.join("rerac-0.1.0-macos-arm64.zip");
+        release_zip(&file, Some("rerac-0.1.0-macos-arm64"), 0o755);
         let got = install_download(&file, &official, "v0.1.0", &["rac1"]).unwrap();
         assert_eq!(got.vref, VersionRef { source: SourceId::Official, id: "v0.1.0".into() });
-        assert!(got.dir.join("randcrw").is_file());
+        assert!(got.dir.join("rerac").is_file());
         assert!(!file.exists() && !dl.exists());
         // It shows up in the listing like any installed version, and github::to_rows sees it.
         let layout = crate::paths::Layout::new(t.0.join("root"));
@@ -378,7 +378,7 @@ pub(crate) mod tests {
             w.write_all(b"hi").unwrap();
             w.finish().unwrap();
         }
-        assert!(install_archive(&empty, SourceId::Development, &src, None, &["rac1"]).unwrap_err().contains("not a randcrw build"));
+        assert!(install_archive(&empty, SourceId::Development, &src, None, &["rac1"]).unwrap_err().contains("not a ReRAC build"));
         // Wrong extension.
         assert!(install_archive(&t.0.join("x.tar.gz"), SourceId::Development, &src, None, &["rac1"]).is_err());
         // Unknown game.
@@ -412,6 +412,6 @@ pub(crate) mod tests {
         assert!(make_symlink(&t.0, Path::new("a/link"), "/etc/passwd").is_err());
         fs::create_dir_all(t.0.join("a")).unwrap();
         #[cfg(unix)]
-        assert!(make_symlink(&t.0, Path::new("a/link"), "../randcrw").is_ok());
+        assert!(make_symlink(&t.0, Path::new("a/link"), "../rerac").is_ok());
     }
 }

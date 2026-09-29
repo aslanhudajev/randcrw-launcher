@@ -1,18 +1,18 @@
 # Launcher ↔ game contract v0
 
-The randcrw launcher (this repo) and the randcrw game repo both implement exactly this. Types:
+The ReRAC launcher (this repo, `re-rac/rerac-launcher`) and the ReRAC game repo (`re-rac/rerac`) both implement exactly this. Types:
 `src-tauri/src/contract.rs` (Rust) and `src/backend/contract.ts` (TypeScript). Change all three
 together.
 
 ## Version
 
 A **version** is one game build, official or (later) a mod. It is a folder
-`versions/<source>/<version>/` that contains `randcrw-manifest.json`:
+`versions/<source>/<version>/` that contains `rerac-manifest.json`:
 
 ```json
 {
   "schema": 1,
-  "name": "randcrw",
+  "name": "rerac",
   "version": "0.1.0",
   "game": "rac1",
   "runtime": "<relative path to game binary>",
@@ -24,16 +24,16 @@ A **version** is one game build, official or (later) a mod. It is a folder
 
 - `runtime` and `extractor` are relative to the version folder and may not leave it (no `..`,
   no absolute paths). The launcher rejects the manifest otherwise.
-- The launcher accepts `schema` 1 only and requires `name` = `randcrw`.
+- The launcher accepts `schema` 1 only and requires `name` = `rerac`.
 - The Development source points at a local folder with this manifest (for example a dev build
   folder). It is used in place; nothing is copied.
 
-## Extractor CLI (`randcrw-extract`)
+## Extractor CLI (`rerac-extract`)
 
 ```
-randcrw-extract identify --iso <path> --json
-randcrw-extract extract  --iso <path> --out <game_data_dir> [--ntsc-only] --json
-randcrw-extract verify   --out <game_data_dir> --json
+rerac-extract identify --iso <path> --json
+rerac-extract extract  --iso <path> --out <game_data_dir> [--ntsc-only] --json
+rerac-extract verify   --out <game_data_dir> --json
 ```
 
 - `identify` identifies the disc only.
@@ -72,7 +72,7 @@ On success the extractor writes `<game_data_dir>/extract-info.json`:
 
 ## Runtime
 
-- `<runtime> --version-json` prints `{"name":"randcrw","version":"...","game":"rac1","data_format":1}`
+- `<runtime> --version-json` prints `{"name":"rerac","version":"...","game":"rac1","data_format":1}`
   and exits.
 - The launcher starts the game with `<runtime> --data-dir <game_data_dir>`. The env var
   `RC_DATA_DIR` is equivalent; the launcher sets both.
@@ -85,30 +85,30 @@ On success the extractor writes `<game_data_dir>/extract-info.json`:
   | Exit | Raised when | Launcher |
   |---|---|---|
   | 0 | normal quit (also after `--version-json`) | |
-  | 2 | `--data-dir` given without a value | "randcrw couldn't start." (a launcher/game mismatch) |
+  | 2 | `--data-dir` given without a value | "ReRAC couldn't start." (a launcher/game mismatch) |
   | 3 | the data folder is missing, is not a data folder (no `toc.bin`), or the extraction is incomplete (no `extract-info.json`) | "The game data is missing or incomplete." + Re-extract |
-  | 4 | `extract-info.json` has another `data_format`, or cannot be read | "The game data doesn't match this randcrw version." + Re-extract |
+  | 4 | `extract-info.json` has another `data_format`, or cannot be read | "The game data doesn't match this ReRAC version." + Re-extract |
 
   The launcher shows the `error:` line under Details. Any other non-zero exit (a panic is 101; a
   signal has no code) is a crash; the launcher says so and points at the log. Unknown arguments
   are ignored with a warning, so a newer launcher's extra flags do not stop an older runtime.
 - **Packaged version folder** (game repo clarification 15, `tools/package/package.sh`):
-  `randcrw` (`randcrw.exe` on Windows), `randcrw-extract`, `assets/shaders/*.wgsl`,
-  `randcrw-manifest.json`, `README.txt`. The manifest names the binaries by these relative paths.
+  `rerac` (`rerac.exe` on Windows), `rerac-extract`, `assets/shaders/*.wgsl`,
+  `rerac-manifest.json`, `README.txt`. The manifest names the binaries by these relative paths.
   The runtime finds `assets/` next to its real (symlink-resolved) executable, so the folder can be
-  copied or moved as a whole, but `randcrw` must not be copied out of it alone. Releases are
-  published as `randcrw-<version>-<os>-<arch>.zip` holding that folder as its single top-level
-  entry (e.g. `randcrw-0.1.0-macos-arm64/`).
+  copied or moved as a whole, but `rerac` must not be copied out of it alone. Releases are
+  published as `rerac-<version>-<os>-<arch>.zip` holding that folder as its single top-level
+  entry (e.g. `rerac-0.1.0-macos-arm64/`).
 
 ## Folders
 
-Per-OS app data root named `randcrw`:
+Per-OS app data root named `rerac`:
 
 | OS | Default |
 |---|---|
-| macOS | `~/Library/Application Support/randcrw/` |
-| Windows | `%LOCALAPPDATA%\randcrw\` |
-| Linux | `$XDG_DATA_HOME/randcrw/` (default `~/.local/share/randcrw/`) |
+| macOS | `~/Library/Application Support/rerac/` |
+| Windows | `%LOCALAPPDATA%\rerac\` |
+| Linux | `$XDG_DATA_HOME/rerac/` (default `~/.local/share/rerac/`) |
 
 Under it:
 
@@ -120,7 +120,13 @@ logs/
 settings/            settings/launcher.json holds the launcher settings
 ```
 
-The user can move the data root. Never use the name "randcre" anywhere user-facing.
+The user can move the data root. User-facing text says **ReRAC** (technical identifier `rerac`); no other project
+name appears anywhere user-facing.
+
+Launcher side only (not part of the game contract): before the rename the root was named `randcrw`. On start, when
+the default `rerac` root is missing and a `randcrw` folder sits next to it, the launcher copies it once to `rerac`
+(through a `rerac.migrating` staging folder), leaves the old folder untouched and notes the copy in
+`logs/launcher.log`. With `RERAC_DATA_ROOT` set, nothing is copied.
 
 ## Clarifications (game side)
 
@@ -145,7 +151,7 @@ The canonical copy of the contract and of these clarifications lives in the game
    incomplete and is never launched.
 8. `--iso` falls back to `RC_ISO`; `--threads N`, `--help` and `--version` exist.
 9. A full extraction of about 4 GiB takes 3–8 s, `verify` about 2 s.
-10. **Exports (optional).** `randcrw-extract export --out <game_data_dir> [--to <dir>] [--what
+10. **Exports (optional).** `rerac-extract export --out <game_data_dir> [--to <dir>] [--what
     textures,audio,models,levels,collision,text|all] [--level NN] [--json]` writes PNG / WAV / glTF /
     JSON from the installed data (never the disc). Progress uses the stage `export`; `done`/`total`
     are bytes of installed data read. `export-info.json` in `--to` is written last; files are
@@ -159,7 +165,7 @@ These are how the launcher uses the contract. The game side does not need to do 
 
 - **Export assets…** (RAC1 game screen, secondary menu). A modal picks the destination (default
   `games/<game>/data/exports/`; a picked folder that is neither empty nor an earlier export gets a
-  `randcrw-<game>-exports/` subfolder) and the kinds, then runs `export --out games/<game>/data
+  `rerac-<game>-exports/` subfolder) and the kinds, then runs `export --out games/<game>/data
   --to <dir> --what <kinds> --json` as a job like `verify` (same progress panel, cancel = kill,
   log `logs/export-<game>-<unix>.log`). It never touches `data/`. The result panel offers "Open
   folder"; failures use their own messages (no re-extract offer).
@@ -175,11 +181,11 @@ These are how the launcher uses the contract. The game side does not need to do 
   contract objects are treated as `info`.
 - **Moved data root.** When the user moves the data root, `location.json`
   (`{"data_root": "<absolute path>"}`) is written into the default root so the launcher finds it
-  again. `RANDCRW_DATA_ROOT` overrides the data root for development.
+  again. `RERAC_DATA_ROOT` overrides the data root for development.
 - **Stale data.** If the installed `extract-info.json` has a different `data_format` than the
   active version's manifest, the launcher asks for a re-extract instead of starting the game.
 - **Validation.** A version is usable when its manifest parses, both binaries exist, and
-  `<runtime> --version-json` answers within 10 s with `name` = `randcrw` and the same `game` and
+  `<runtime> --version-json` answers within 10 s with `name` = `rerac` and the same `game` and
   `data_format` as the manifest.
 - **Installing a version** (`src-tauri/src/install.rs`). "Install from zip…" (Development) and
   Official downloads take the same path: unpack into a hidden `versions/<source>/.install-*`
@@ -192,11 +198,11 @@ These are how the launcher uses the contract. The game side does not need to do 
 - **macOS quarantine.** The launcher removes `com.apple.quarantine` from installed versions and
   from the two binaries of a registered development folder. A zip downloaded with a browser is
   quarantined, Finder's Archive Utility copies the flag onto every unpacked file, and Gatekeeper
-  then refuses to run the ad-hoc-signed `randcrw` ("developer cannot be verified").
+  then refuses to run the ad-hoc-signed `rerac` ("developer cannot be verified").
 - **Active version.** The extractor for Install/Verify and the runtime for Play both come from the
   active version. Switching to a version with another `data_format` than the installed data warns
   right away, and Play is replaced by a Re-extract prompt.
-- **Play.** `<version>/randcrw --data-dir <root>/games/<game>/data` (plus `RC_DATA_DIR`), working
+- **Play.** `<version>/rerac --data-dir <root>/games/<game>/data` (plus `RC_DATA_DIR`), working
   directory the version folder. Optionally the launcher minimises itself while the game runs
   (setting `minimize_while_playing`, default off) and comes back when it exits.
 - **Logs.** `logs/extract-<game>-<unix>.log`, `logs/verify-<game>-<unix>.log` and

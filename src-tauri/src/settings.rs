@@ -47,13 +47,13 @@ pub struct OfficialSettings {
 
 impl Default for OfficialSettings {
     fn default() -> Self {
-        OfficialSettings { enabled: false, owner: "randcrw".into(), repo: "randcrw".into() }
+        OfficialSettings { enabled: false, owner: "re-rac".into(), repo: "rerac".into() }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DevVersionEntry {
-    /// Absolute path of the build folder that holds `randcrw-manifest.json`.
+    /// Absolute path of the build folder that holds `rerac-manifest.json`.
     pub path: PathBuf,
 }
 
@@ -61,7 +61,7 @@ impl Settings {
     pub fn load(path: &Path) -> Settings {
         match fs::read_to_string(path) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
-                eprintln!("[randcrw-launcher] {} is unreadable ({e}); using defaults", path.display());
+                eprintln!("[rerac-launcher] {} is unreadable ({e}); using defaults", path.display());
                 Settings::default()
             }),
             Err(_) => Settings::default(),

@@ -1,11 +1,12 @@
+import logo from "../assets/brand/rerac-logo-480.png";
 import { IconFolder, IconLink } from "../components/Icons";
 import { useLauncher } from "../state";
 
-// Placeholder links until the project has public pages.
+// Placeholder links until the website has these pages.
 const LINKS = [
-  { title: "Getting started", text: "How to dump your disc and install the game data.", url: "https://github.com/randcrw" },
-  { title: "Report a problem", text: "Open an issue with your launcher and game logs attached.", url: "https://github.com/randcrw" },
-  { title: "Compatibility", text: "Which discs and releases are supported.", url: "https://github.com/randcrw" },
+  { title: "Getting started", text: "How to dump your disc and install the game data.", url: "https://re-rac.github.io" },
+  { title: "Report a problem", text: "Open an issue with your launcher and game logs attached.", url: "https://github.com/re-rac/rerac-launcher/issues" },
+  { title: "Compatibility", text: "Which discs and releases are supported.", url: "https://re-rac.github.io" },
 ];
 
 export function Help() {
@@ -26,7 +27,7 @@ export function Help() {
               <b>Install via ISO.</b> Choose a disc image of your own Ratchet & Clank (US, SCUS-97199). It is read once.
             </li>
             <li>
-              <b>Play.</b> The launcher starts randcrw with your extracted data.
+              <b>Play.</b> The launcher starts ReRAC with your extracted data.
             </li>
           </ol>
         </div>
@@ -49,13 +50,13 @@ export function Help() {
         </div>
         <div className="card plate about">
           <h3>About</h3>
+          <img className="about-logo" src={logo} alt="ReRAC" draggable={false} />
           <p>
-            <b>Ratchet &amp; Clank: ReWrite</b> (randcrw for short) is the PlayStation 2 game rebuilt natively, from
-            scratch, to run on today's computers with the data from your own disc. Launcher v
-            {snapshot?.launcher_version ?? "…"}.
+            <b>ReRAC</b> is the PlayStation 2 game Ratchet &amp; Clank (2002) rebuilt natively, from scratch, to run on
+            today's computers with the data from your own disc. Launcher v{snapshot?.launcher_version ?? "…"}.
           </p>
           <p>
-            randcrw is an unofficial fan project, not affiliated with or endorsed by Sony Interactive Entertainment or
+            ReRAC is an unofficial fan project, not affiliated with or endorsed by Sony Interactive Entertainment or
             Insomniac Games. It ships no game data: you provide your own disc.
           </p>
           <p className="muted small">

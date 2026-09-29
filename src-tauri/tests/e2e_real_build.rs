@@ -1,4 +1,4 @@
-//! End to end against a real randcrw release and your own disc image, through the launcher
+//! End to end against a real ReRAC release and your own disc image, through the launcher
 //! backend (the same functions the Tauri commands call):
 //!
 //! 1. install the release zip as a Development version (`install::install_archive`);
@@ -10,23 +10,24 @@
 //! Opt-in (ignored by default; about 4 GiB is written and deleted again):
 //!
 //! ```sh
-//! RANDCRW_E2E_ZIP=~/Repos/randcre/dist/randcrw-0.1.0-macos-arm64.zip \
-//! RANDCRW_E2E_ISO="$HOME/PS2/ratchet1/Ratchet & Clank (USA) (En,Fr,De,Es,It).iso" \
-//! RANDCRW_E2E_OUT=/some/scratch/dir \
+//! # RERAC_GAME_DIR: your local checkout of re-rac/rerac (e.g. the sibling folder ../randcre)
+//! RERAC_E2E_ZIP="$RERAC_GAME_DIR/dist/rerac-0.1.0-macos-arm64.zip" \
+//! RERAC_E2E_ISO="$HOME/PS2/ratchet1/Ratchet & Clank (USA) (En,Fr,De,Es,It).iso" \
+//! RERAC_E2E_OUT=/some/scratch/dir \
 //! cargo test --test e2e_real_build -- --ignored --nocapture
 //! ```
 //!
-//! The screenshot is kept at `$RANDCRW_E2E_OUT/rac1-e2e.png` and the logs under
-//! `$RANDCRW_E2E_OUT/root/logs/`; the game data and the installed version are deleted.
+//! The screenshot is kept at `$RERAC_E2E_OUT/rac1-e2e.png` and the logs under
+//! `$RERAC_E2E_OUT/root/logs/`; the game data and the installed version are deleted.
 //! The game window opens once (blank; the capture is offscreen).
 
-use randcrw_launcher_lib::contract::EXTRACT_INFO_FILE;
-use randcrw_launcher_lib::extractor::{self, FinishStatus, JobKind, JobManager, JobSpec};
-use randcrw_launcher_lib::install;
-use randcrw_launcher_lib::launch::{self, ExitedPayload, GameProcess, LaunchPlan};
-use randcrw_launcher_lib::paths::Layout;
-use randcrw_launcher_lib::settings::Settings;
-use randcrw_launcher_lib::versions::{self, SourceId};
+use rerac_launcher_lib::contract::EXTRACT_INFO_FILE;
+use rerac_launcher_lib::extractor::{self, FinishStatus, JobKind, JobManager, JobSpec};
+use rerac_launcher_lib::install;
+use rerac_launcher_lib::launch::{self, ExitedPayload, GameProcess, LaunchPlan};
+use rerac_launcher_lib::paths::Layout;
+use rerac_launcher_lib::settings::Settings;
+use rerac_launcher_lib::versions::{self, SourceId};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -57,9 +58,9 @@ fn log_text(p: &Path) -> String {
 #[ignore]
 fn real_build_install_extract_play() {
     let (Ok(zip), Ok(iso), Ok(out)) =
-        (std::env::var("RANDCRW_E2E_ZIP"), std::env::var("RANDCRW_E2E_ISO"), std::env::var("RANDCRW_E2E_OUT"))
+        (std::env::var("RERAC_E2E_ZIP"), std::env::var("RERAC_E2E_ISO"), std::env::var("RERAC_E2E_OUT"))
     else {
-        eprintln!("RANDCRW_E2E_ZIP / RANDCRW_E2E_ISO / RANDCRW_E2E_OUT not set; skipping");
+        eprintln!("RERAC_E2E_ZIP / RERAC_E2E_ISO / RERAC_E2E_OUT not set; skipping");
         return;
     };
     let out = PathBuf::from(out);
@@ -80,7 +81,7 @@ fn real_build_install_extract_play() {
     )
     .unwrap();
     eprintln!(
-        "installed randcrw {} (runtime answered {} / data_format {}) into {} in {} ms",
+        "installed ReRAC {} (runtime answered {} / data_format {}) into {} in {} ms",
         installed.manifest.version,
         installed.runtime.version,
         installed.runtime.data_format,
@@ -90,12 +91,12 @@ fn real_build_install_extract_play() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        for b in ["randcrw", "randcrw-extract"] {
+        for b in ["rerac", "rerac-extract"] {
             let m = fs::metadata(installed.dir.join(b)).unwrap().permissions().mode();
             assert_eq!(m & 0o111, 0o111, "{b} lost its exec bits");
         }
     }
-    assert!(installed.dir.join("assets/shaders").is_dir(), "assets/ must sit next to randcrw");
+    assert!(installed.dir.join("assets/shaders").is_dir(), "assets/ must sit next to rerac");
 
     let settings = Settings { active_version: Some(installed.vref.clone()), ..Settings::default() };
     settings.save(&layout.settings_file()).unwrap();
@@ -104,7 +105,7 @@ fn real_build_install_extract_play() {
 
     // 2. Extract with the active version's extractor.
     let v = versions::resolve_active(&layout, &settings).unwrap();
-    assert_eq!(v.extractor, installed.dir.join("randcrw-extract"));
+    assert_eq!(v.extractor, installed.dir.join("rerac-extract"));
     let spec = JobSpec::new(JobKind::Extract, "rac1", &v, &layout, Some(PathBuf::from(&iso)), settings.ntsc_only);
     let jm = JobManager::default();
     let (ftx, frx) = mpsc::channel();
@@ -120,7 +121,7 @@ fn real_build_install_extract_play() {
 
     // 3. Play: offscreen capture of frame 300, then exit 0.
     let plan = launch::plan(&layout, &settings, "rac1").unwrap();
-    assert_eq!(plan.runtime, installed.dir.join("randcrw"));
+    assert_eq!(plan.runtime, installed.dir.join("rerac"));
     let png = out.join("rac1-e2e.png");
     let _ = fs::remove_file(&png);
     let game_settings = out.join("rac1-e2e-settings.ron");

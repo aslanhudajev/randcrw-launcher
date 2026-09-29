@@ -1,7 +1,7 @@
 {
-  "name": "randcrw-launcher",
+  "name": "rerac-launcher",
   "private": true,
-  "description": "Launcher for randcrw (Ratchet & Clank: ReWrite)",
+  "description": "Launcher for ReRAC",
   "version": "0.1.0",
   "type": "module",
   "scripts": {

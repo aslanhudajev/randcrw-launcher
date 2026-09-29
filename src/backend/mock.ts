@@ -1,5 +1,5 @@
 // In-browser mock of the Rust backend, for `npm run dev` in a normal browser and for headless
-// screenshots. It follows the same contract as dev/mock/randcrw-extract.
+// screenshots. It follows the same contract as dev/mock/rerac-extract.
 //
 // URL parameters:
 //   ?mock=not-installed | installed | extracting | verifying | exporting | exported | error21 | error20 | sequel | no-version | stale | playing
@@ -46,8 +46,8 @@ const params = new URLSearchParams(typeof location !== "undefined" ? location.se
 const scenario = (params.get("mock") ?? "not-installed") as Scenario;
 
 const HOME = "/Users/you";
-const DEFAULT_ROOT = `${HOME}/Library/Application Support/randcrw`;
-const DEV_BUILD = `${HOME}/Repos/randcrw/target/release`;
+const DEFAULT_ROOT = `${HOME}/Library/Application Support/rerac`;
+const DEV_BUILD = `${HOME}/Repos/rerac/target/release`;
 
 const MESSAGES: Record<number, string> = {
   10: "cannot read the image: it has fewer sectors than its volume descriptor declares (truncated)",
@@ -77,11 +77,11 @@ const TOTAL = FILES.reduce((a, [, s]) => a + s, 0);
 function devManifest(): Manifest {
   return {
     schema: 1,
-    name: "randcrw",
+    name: "rerac",
     version: "0.1.0-dev",
     game: "rac1",
-    runtime: "randcrw",
-    extractor: "randcrw-extract",
+    runtime: "rerac",
+    extractor: "rerac-extract",
     supported_discs: ["SCUS_971.99"],
     data_format: scenario === "stale" ? 2 : 1,
   };
@@ -106,7 +106,7 @@ const DISCS = {
   other: disc("SLUS_203.12", "NTSC-U", false, "unknown", ""),
 };
 
-/** Same rules as dev/mock/randcrw-extract. */
+/** Same rules as dev/mock/rerac-extract. */
 function outcome(iso: string): { err: number; disc?: Disc } {
   const name = iso.split(/[\\/]/).pop()!.toLowerCase();
   const m = name.match(/err(\d\d)/);
@@ -126,8 +126,8 @@ export function createMockBackend(): Backend {
   const settings: Settings = {
     schema: 1,
     active_version: noVersion ? null : { source: "development", id: DEV_BUILD },
-    official: { enabled: false, owner: "randcrw", repo: "randcrw" },
-    dev_versions: noVersion ? [] : [{ path: DEV_BUILD }, { path: `${HOME}/Downloads/randcrw-old` }],
+    official: { enabled: false, owner: "re-rac", repo: "rerac" },
+    dev_versions: noVersion ? [] : [{ path: DEV_BUILD }, { path: `${HOME}/Downloads/rerac-old` }],
     ntsc_only: false,
     minimize_while_playing: false,
   };
@@ -271,8 +271,8 @@ export function createMockBackend(): Backend {
       ref,
       path: managed ? `${dataRoot}/versions/development/${path}` : path,
       manifest,
-      runtime: manifest ? { name: "randcrw", version: manifest.version, game: "rac1", data_format: manifest.data_format } : null,
-      problem: good ? null : `No randcrw-manifest.json in ${path}`,
+      runtime: manifest ? { name: "rerac", version: manifest.version, game: "rac1", data_format: manifest.data_format } : null,
+      problem: good ? null : `No rerac-manifest.json in ${path}`,
       active: settings.active_version?.id === path,
       managed,
     };
@@ -316,7 +316,7 @@ export function createMockBackend(): Backend {
       return runJob("verify", null, { slow: false });
     },
     exportTarget: async (_game, picked) =>
-      /\/(exports|randcrw-rac1-exports)$/.test(picked) || picked.endsWith("/Empty") ? picked : `${picked}/randcrw-rac1-exports`,
+      /\/(exports|rerac-rac1-exports)$/.test(picked) || picked.endsWith("/Empty") ? picked : `${picked}/rerac-rac1-exports`,
     startExport: async (game, to, what) => {
       if (game !== "rac1") throw "This game is not supported yet.";
       if (!installed) throw "The game data is not installed.";
@@ -342,7 +342,7 @@ export function createMockBackend(): Backend {
       const messages: Record<number, string> = {
         2: "error: --data-dir needs a value",
         101: "thread 'main' panicked at crates/rc-engine/src/main.rs: index out of bounds",
-        3: `error: ${dataRoot}/games/${game}/data is not a complete randcrw data folder (no toc.bin)`,
+        3: `error: ${dataRoot}/games/${game}/data is not a complete ReRAC data folder (no toc.bin)`,
         4: "error: data_format 1 in extract-info.json does not match this build (2)",
       };
       setTimeout(
@@ -364,11 +364,11 @@ export function createMockBackend(): Backend {
     openUrl: async (url) => console.info("[mock] open url", url),
     pickFolder: async (title) => {
       await sleep(120);
-      return /build/i.test(title) ? `${HOME}/Repos/randcrw/dist/dev` : /export/i.test(title) ? `${HOME}/Desktop` : "/Volumes/Games";
+      return /build/i.test(title) ? `${HOME}/Repos/rerac/dist/dev` : /export/i.test(title) ? `${HOME}/Desktop` : "/Volumes/Games";
     },
     moveDataRoot: async (target) => {
       busy();
-      dataRoot = target.endsWith("/randcrw") ? target : `${target}/randcrw`;
+      dataRoot = target.endsWith("/rerac") ? target : `${target}/rerac`;
       return snapshot();
     },
     setNtscOnly: async (value) => {
@@ -379,13 +379,13 @@ export function createMockBackend(): Backend {
       [...[...installedZips].sort().reverse(), ...settings.dev_versions.map((d) => d.path)].map((id) => ({ ...devInfo(id), runtime: null })),
     pickZip: async () => {
       await sleep(120);
-      return `${HOME}/Downloads/${params.get("zip") ?? "randcrw-0.2.0-macos-arm64.zip"}`;
+      return `${HOME}/Downloads/${params.get("zip") ?? "rerac-0.2.0-macos-arm64.zip"}`;
     },
     installVersionZip: async (path) => {
       busy();
       await sleep(900);
-      if (/bad/i.test(path)) throw "This archive is not a randcrw build: there is no randcrw-manifest.json at its top level.";
-      const version = path.match(/randcrw-([0-9][^-]*)/)?.[1] ?? "0.2.0";
+      if (/bad/i.test(path)) throw "This archive is not a ReRAC build: there is no rerac-manifest.json at its top level.";
+      const version = path.match(/rerac-([0-9][^-]*)/)?.[1] ?? "0.2.0";
       installedZips.add(version);
       return devInfo(version);
     },

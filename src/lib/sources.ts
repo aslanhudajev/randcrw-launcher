@@ -14,12 +14,12 @@ export const SOURCES: SourceDef[] = [
   {
     id: "official",
     label: "Official",
-    blurb: "Release builds published by the randcrw project.",
+    blurb: "Release builds published by the ReRAC project.",
   },
   {
     id: "development",
     label: "Development",
-    blurb: "Local builds from a folder containing randcrw-manifest.json.",
+    blurb: "Local builds from a folder containing rerac-manifest.json.",
   },
   {
     id: "mods",

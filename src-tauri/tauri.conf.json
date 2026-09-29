@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "randcrw launcher",
-  "mainBinaryName": "randcrw-launcher",
+  "productName": "ReRAC Launcher",
+  "mainBinaryName": "rerac-launcher",
   "version": "0.1.0",
-  "identifier": "com.randcrw.launcher",
+  "identifier": "com.rerac.launcher",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Ratchet & Clank: ReWrite",
+        "title": "ReRAC Launcher",
         "width": 1180,
         "height": 740,
         "minWidth": 1000,
@@ -32,8 +32,8 @@
     "active": true,
     "targets": "all",
     "category": "Game",
-    "shortDescription": "Launcher for randcrw (Ratchet & Clank: ReWrite)",
-    "longDescription": "randcrw (Ratchet & Clank: ReWrite) is a native rewrite of the PlayStation 2 game. The launcher installs the game data once from your own disc image, manages game versions and starts the game.",
+    "shortDescription": "Launcher for ReRAC",
+    "longDescription": "ReRAC is a native rewrite of the PlayStation 2 game Ratchet & Clank (2002). The launcher installs the game data once from your own disc image, manages game versions and starts the game.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

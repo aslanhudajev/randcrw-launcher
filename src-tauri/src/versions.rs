@@ -1,6 +1,6 @@
 //! Game versions and where they come from.
 //!
-//! A version is a folder holding `randcrw-manifest.json` (contract §Version). Versions come from
+//! A version is a folder holding `rerac-manifest.json` (contract §Version). Versions come from
 //! *sources*:
 //!
 //! - `official`: GitHub releases, downloaded and unpacked into `<root>/versions/official/<tag>/`.
@@ -182,8 +182,8 @@ pub fn query_runtime(v: &ResolvedVersion) -> Result<RuntimeVersion, String> {
 }
 
 pub fn check_runtime_matches(m: &Manifest, rv: &RuntimeVersion) -> Result<(), String> {
-    if rv.name != "randcrw" {
-        return Err(format!("The runtime reports name \"{}\", expected randcrw", rv.name));
+    if rv.name != "rerac" {
+        return Err(format!("The runtime reports name \"{}\", expected rerac", rv.name));
     }
     if rv.game != m.game {
         return Err(format!("The runtime is for {}, the manifest says {}", rv.game, m.game));
@@ -267,10 +267,10 @@ mod tests {
         fs::create_dir_all(dir.join("bin")).unwrap();
         fs::write(
             dir.join(MANIFEST_FILE),
-            r#"{"schema":1,"name":"randcrw","version":"0.1.0","game":"rac1","runtime":"bin/randcrw","extractor":"bin/randcrw-extract","supported_discs":["SCUS_971.99"],"data_format":1}"#,
+            r#"{"schema":1,"name":"rerac","version":"0.1.0","game":"rac1","runtime":"bin/rerac","extractor":"bin/rerac-extract","supported_discs":["SCUS_971.99"],"data_format":1}"#,
         )
         .unwrap();
-        for f in ["bin/randcrw", "bin/randcrw-extract"] {
+        for f in ["bin/rerac", "bin/rerac-extract"] {
             fs::write(dir.join(f), runtime_body).unwrap();
             #[cfg(unix)]
             {
@@ -329,8 +329,8 @@ mod tests {
         assert_eq!(all[1].vref, VersionRef { source: SourceId::Development, id: "0.2.0".into() });
         assert!(all[1].managed && all[1].problem.is_none());
         assert!(all[2].active && all[2].vref == dref && all[2].problem.is_none() && !all[2].managed);
-        assert!(all[3].problem.as_deref().unwrap().contains("No randcrw-manifest.json"));
-        assert_eq!(resolve_active(&layout, &s).unwrap().runtime, dev.join("bin/randcrw"));
+        assert!(all[3].problem.as_deref().unwrap().contains("No rerac-manifest.json"));
+        assert_eq!(resolve_active(&layout, &s).unwrap().runtime, dev.join("bin/rerac"));
     }
 
     #[cfg(unix)]
@@ -340,7 +340,7 @@ mod tests {
         let good = t.0.join("good");
         write_version(
             &good,
-            "#!/bin/sh\necho 'booting'\necho '{\"name\":\"randcrw\",\"version\":\"0.1.0\",\"game\":\"rac1\",\"data_format\":1}'\n",
+            "#!/bin/sh\necho 'booting'\necho '{\"name\":\"rerac\",\"version\":\"0.1.0\",\"game\":\"rac1\",\"data_format\":1}'\n",
         );
         let r = VersionRef { source: SourceId::Development, id: good.to_string_lossy().into() };
         let info = validate(r, good, false);
@@ -350,7 +350,7 @@ mod tests {
         let bad = t.0.join("bad");
         write_version(
             &bad,
-            "#!/bin/sh\necho '{\"name\":\"randcrw\",\"version\":\"0.1.0\",\"game\":\"rac1\",\"data_format\":2}'\n",
+            "#!/bin/sh\necho '{\"name\":\"rerac\",\"version\":\"0.1.0\",\"game\":\"rac1\",\"data_format\":2}'\n",
         );
         let r = VersionRef { source: SourceId::Development, id: bad.to_string_lossy().into() };
         let info = validate(r, bad, false);

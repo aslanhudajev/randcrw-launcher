@@ -26,6 +26,7 @@ Mod management is planned. It is built with [Tauri](https://v2.tauri.app/).
   - [Building and running](#building-and-running)
   - [Running a local build of the game](#running-a-local-build-of-the-game)
   - [Testing without the game](#testing-without-the-game)
+  - [Releasing](#releasing)
 - [Related](#related)
 - [License](#license)
 
@@ -151,6 +152,42 @@ top of the file.
 - **Real extractor, mock game.** `dev/make-real-extractor-version.sh` makes `dev/real/` (git-ignored) with the game
   repository's real `rerac-extract` and the mock runtime. Add that folder under Development instead. It looks for the
   game in `$RERAC_GAME_DIR`, your local checkout of re-rac/rerac (default: the sibling folder `../randcre`).
+
+### Releasing
+
+Releases are built by GitHub Actions (`.github/workflows/release.yml`) when a `v*` tag is pushed.
+
+1. Set the version in `package.json` (`tauri.conf.json` reads it from there) and in `src-tauri/Cargo.toml`, then run
+   `cargo check` in `src-tauri` to update `Cargo.lock`. The version is numbers only (`0.2.0`), because the macOS and
+   Windows installers require that; a prerelease suffix goes on the tag only.
+2. Add a `## vX.Y.Z[-pre]` section to `CHANGELOG.md`, for players, one paragraph per line. It becomes the release
+   notes; the workflow stops if the section is missing.
+3. Commit, tag and push the tag:
+
+   ```sh
+   git tag -a v0.2.0-beta.1 -m "ReRAC Launcher v0.2.0-beta.1"
+   git push origin main v0.2.0-beta.1
+   ```
+
+The workflow creates a draft release, builds macOS (Apple Silicon and Intel), Windows and Linux in parallel, uploads
+each installer twice (tauri-action's versioned name and a stable one: `rerac-launcher-macos-arm64.dmg`,
+`rerac-launcher-macos-x64.dmg`, `rerac-launcher-windows-x64.msi`, `rerac-launcher-linux-x86_64.AppImage`), and then
+publishes it once both macOS installers are there. Windows and Linux are untested and do not block the release. Tags
+containing `-alpha`, `-beta` or `-rc` become prereleases. The website links to
+`/releases/latest/download/<stable name>`, and GitHub's "latest" skips prereleases, so those links work only once a
+release without a suffix exists.
+
+Secrets (Settings → Secrets and variables → Actions):
+
+- Needed now: none. The workflow uses the built-in `GITHUB_TOKEN`.
+- Optional: `SITE_DISPATCH_TOKEN`, a token that may write to `re-rac/re-rac.github.io`. When it is set, publishing
+  sends that repository a `release-published` dispatch so the website rebuilds.
+- Later, macOS signing and notarization: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+  `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`.
+- Later, the Tauri updater: `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (plus the updater plugin
+  and its public key in `tauri.conf.json`).
+
+The signing lines are in the workflow, commented out; uncomment them once the secrets exist.
 
 ## Related
 

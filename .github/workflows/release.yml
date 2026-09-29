@@ -1,0 +1,259 @@
+name: Release
+
+# Push a tag like v0.1.0 or v0.2.0-beta.1 to build and publish a release. "Run workflow" works
+# too, but pick the tag (not a branch) in its ref selector. See "Releasing" in README.md.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ github.ref_name }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  # One draft release that every build job uploads to. Creating it up front avoids parallel build
+  # jobs racing to create it; it stays a draft until the publish job has checked the assets.
+  create-release:
+    name: Create draft release
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check that the ref is a version tag
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          echo "::error::Run this workflow on a v* tag, not on ${GITHUB_REF}."
+          exit 1
+
+      - uses: actions/checkout@v5
+
+      - name: Work out whether this is a prerelease
+        id: meta
+        run: |
+          case "$TAG" in
+            *-alpha*|*-beta*|*-rc*) pre=true ;;
+            *) pre=false ;;
+          esac
+          echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
+
+      - name: Take the release notes from CHANGELOG.md
+        run: |
+          awk -v head="## $TAG" '$0 == head { f = 1; next } f && /^## / { exit } f' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no '## $TAG' section."
+            exit 1
+          fi
+
+      - name: Create or update the draft release
+        id: release
+        env:
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          find_id() {
+            gh api "repos/$GH_REPO/releases" --paginate --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n 1
+          }
+          id=$(find_id)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GH_REPO/releases/$id" \
+              -f name="ReRAC Launcher $TAG" -F prerelease="$PRERELEASE" -F body=@notes.md > /dev/null
+          else
+            gh release create "$TAG" --verify-tag --draft --prerelease="$PRERELEASE" \
+              --title "ReRAC Launcher $TAG" --notes-file notes.md
+            id=$(find_id)
+          fi
+          if [ -z "$id" ]; then
+            echo "::error::Could not find the release for $TAG."
+            exit 1
+          fi
+          echo "release_id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Apple Silicon
+            platform: macos-14
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+            installer: dmg/*.dmg
+            asset: rerac-launcher-macos-arm64.dmg
+          - name: macOS Intel
+            platform: macos-14
+            target: x86_64-apple-darwin
+            bundles: app,dmg
+            installer: dmg/*.dmg
+            asset: rerac-launcher-macos-x64.dmg
+          # Windows and Linux have never been run. The code has non-Unix branches, so they should
+          # build; a failure here does not stop the macOS release (fail-fast is off and the publish
+          # job only requires the macOS installers).
+          - name: Windows x64 (untested)
+            platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: msi
+            installer: msi/*.msi
+            asset: rerac-launcher-windows-x64.msi
+          - name: Linux x86_64 (untested)
+            platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage
+            installer: appimage/*.AppImage
+            asset: rerac-launcher-linux-x86_64.AppImage
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Linux build dependencies (Tauri 2)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl wget file libxdo-dev libssl-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.target }}
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # So the stable-name step below finds exactly this build's installer.
+      - name: Remove old bundles
+        shell: bash
+        run: rm -rf "src-tauri/target/${{ matrix.target }}/release/bundle"
+
+      - name: Build and upload with tauri-action
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # --- Not set up yet. Add the repository secrets, then uncomment. ---
+          # macOS code signing and notarization:
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}                   # base64 .p12 (Developer ID Application)
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}         # "Developer ID Application: Name (TEAMID)"
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}                         # app-specific password
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Tauri updater signing (also needs tauri-plugin-updater and its public key in tauri.conf.json;
+          # then set includeUpdaterJson to true):
+          # TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "ReRAC Launcher ${{ github.ref_name }}"
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          releaseDraft: true
+          prerelease: ${{ needs.create-release.outputs.prerelease == 'true' }}
+          includeUpdaterJson: false
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      # The website links to /releases/latest/download/<asset>, so each installer is also uploaded
+      # under a name without the version in it.
+      - name: Upload the installer as ${{ matrix.asset }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUNDLE_DIR: src-tauri/target/${{ matrix.target }}/release/bundle
+          INSTALLER: ${{ matrix.installer }}
+          ASSET: ${{ matrix.asset }}
+        run: |
+          shopt -s nullglob
+          files=( "$BUNDLE_DIR"/$INSTALLER )
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::Expected one installer at $BUNDLE_DIR/$INSTALLER, found ${#files[@]}: ${files[*]}"
+            exit 1
+          fi
+          mkdir -p stable
+          cp "${files[0]}" "stable/$ASSET"
+          gh release upload "$TAG" "stable/$ASSET" --clobber
+
+  publish:
+    name: Publish release
+    needs: [create-release, build]
+    # Runs even when an untested platform failed; the check below decides.
+    if: ${{ !cancelled() && needs.create-release.result == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+      PRERELEASE: ${{ needs.create-release.outputs.prerelease }}
+      SITE_DISPATCH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check the assets and write the download list
+        run: |
+          assets=$(gh api "repos/$GH_REPO/releases/$RELEASE_ID" --jq '.assets[].name')
+          has() { grep -qxF "$1" <<< "$assets"; }
+          for a in rerac-launcher-macos-arm64.dmg rerac-launcher-macos-x64.dmg; do
+            if ! has "$a"; then
+              echo "::error::$a is missing; the release stays a draft."
+              exit 1
+            fi
+          done
+
+          awk -v head="## $TAG" '$0 == head { f = 1; next } f && /^## / { exit } f' CHANGELOG.md > notes.md
+          base="https://github.com/$GH_REPO/releases/download/$TAG"
+          {
+            echo
+            echo "### Downloads"
+            echo
+            echo "- macOS, Apple Silicon: [rerac-launcher-macos-arm64.dmg]($base/rerac-launcher-macos-arm64.dmg)"
+            echo "- macOS, Intel: [rerac-launcher-macos-x64.dmg]($base/rerac-launcher-macos-x64.dmg)"
+          } >> notes.md
+          if has rerac-launcher-windows-x64.msi; then
+            echo "- Windows (untested): [rerac-launcher-windows-x64.msi]($base/rerac-launcher-windows-x64.msi)" >> notes.md
+          else
+            echo "::warning::No Windows installer in this release."
+          fi
+          if has rerac-launcher-linux-x86_64.AppImage; then
+            echo "- Linux (untested): [rerac-launcher-linux-x86_64.AppImage]($base/rerac-launcher-linux-x86_64.AppImage)" >> notes.md
+          else
+            echo "::warning::No Linux AppImage in this release."
+          fi
+          {
+            echo
+            echo "Only the macOS versions have been tried so far. The Windows and Linux downloads are built"
+            echo "automatically and have never been run; please report what happens if you try them."
+          } >> notes.md
+
+      - name: Publish the draft
+        run: |
+          jq -n --rawfile body notes.md --argjson pre "$PRERELEASE" \
+            '{draft: false, prerelease: $pre, name: ("ReRAC Launcher " + env.TAG), body: $body}' |
+            gh api -X PATCH "repos/$GH_REPO/releases/$RELEASE_ID" --input - --jq .html_url
+
+      # Optional: tells the website repository to rebuild. Needs a SITE_DISPATCH_TOKEN secret (a
+      # token that can write to re-rac/re-rac.github.io); skipped when it is not set.
+      - name: Ask the website to rebuild
+        if: ${{ env.SITE_DISPATCH_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ env.SITE_DISPATCH_TOKEN }}
+        run: |
+          jq -n --argjson pre "$PRERELEASE" \
+            '{event_type: "release-published", client_payload: {repository: env.GH_REPO, tag: env.TAG, prerelease: $pre}}' |
+            gh api -X POST repos/re-rac/re-rac.github.io/dispatches --input -
